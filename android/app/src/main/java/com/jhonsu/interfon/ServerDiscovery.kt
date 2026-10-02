@@ -12,9 +12,10 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
 import java.net.URL
+import org.json.JSONObject
 
 /**
- * Descubre el servidor Interfon en la red local: escanea el /24 de cada
+ * Descubre los servidores Interfon de la red local: escanea el /24 de cada
  * interfaz WiFi/Ethernet del telefono buscando el puerto 8765 y valida que
  * responda como Interfon via /api/status. Sin dependencias ni configuracion.
  */
@@ -54,8 +55,11 @@ object ServerDiscovery {
         return out.toList()
     }
 
-    /** True si en host:8765 hay un servidor Interfon; devuelve su URL base. */
-    private fun esInterfon(host: String): String? = runCatching {
+    /** Servidor encontrado en la red: URL base y nombre del agente que anuncia. */
+    data class Found(val url: String, val agent: String?)
+
+    /** Si en host:8765 hay un servidor Interfon, devuelve su URL base y agente. */
+    private fun esInterfon(host: String): Found? = runCatching {
         val s = Socket()
         try {
             s.connect(InetSocketAddress(host, PORT), CONNECT_TIMEOUT_MS)
@@ -67,25 +71,29 @@ object ServerDiscovery {
         conn.connectTimeout = HTTP_TIMEOUT_MS
         conn.readTimeout = HTTP_TIMEOUT_MS
         val body = conn.inputStream.bufferedReader().use { it.readText() }
-        if (body.contains("\"interfon\"")) url else null
+        val json = JSONObject(body)
+        if (json.optString("server") == "interfon")
+            Found(url, json.optString("agent").takeIf { it.isNotBlank() })
+        else null
     }.getOrNull()
 
     /**
-     * Escanea la red y devuelve la URL del servidor (o null si no aparece).
-     * Recorre primero el /24 propio del telefono y luego las subredes comunes,
-     * deteniendose en cuanto encuentra un Interfon.
+     * Escanea la red y devuelve TODOS los servidores Interfon encontrados.
+     * Recorre primero los /24 propios del telefono; solo si ahi no hay ninguno
+     * prueba las subredes comunes, deteniendose en la primera que tenga alguno.
      */
-    suspend fun discover(timeoutMs: Long = 45000): String? = withContext(Dispatchers.IO) {
+    suspend fun discoverAll(timeoutMs: Long = 45000): List<Found> = withContext(Dispatchers.IO) {
+        val out = LinkedHashMap<String, Found>()
         withTimeoutOrNull(timeoutMs) {
-            val orden = LinkedHashSet(subredes() + SUBREDES_COMUNES)
-            for (sub in orden) {
+            val propias = subredes()
+            for ((i, sub) in (propias + SUBREDES_COMUNES.filterNot { it in propias }).withIndex()) {
                 val found = coroutineScope {
-                    (1..254).map { i -> async { esInterfon("$sub.$i") } }
-                        .awaitAll().firstOrNull { it != null }
+                    (1..254).map { n -> async { esInterfon("$sub.$n") } }.awaitAll().filterNotNull()
                 }
-                if (found != null) return@withTimeoutOrNull found
+                found.forEach { out[it.url] = it }
+                if (out.isNotEmpty() && i >= propias.size - 1) break
             }
-            null
         }
+        out.values.toList()
     }
 }

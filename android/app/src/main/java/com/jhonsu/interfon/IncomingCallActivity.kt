@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.jhonsu.interfon.ui.InterfonTheme
@@ -43,6 +44,10 @@ class IncomingCallActivity : ComponentActivity() {
 
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(Lang.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,8 +64,9 @@ class IncomingCallActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val callId = intent.getStringExtra("call_id") ?: ""
-        val from = intent.getStringExtra("from") ?: "Agente"
+        val from = intent.getStringExtra("from") ?: getString(R.string.agent_default)
         val text = intent.getStringExtra("text") ?: ""
+        val serverName = Bus.serverName(Bus.incoming.value?.serverId)
 
         startRing()
 
@@ -69,6 +75,7 @@ class IncomingCallActivity : ComponentActivity() {
                 IncomingScreen(
                     from = from,
                     text = text,
+                    serverName = serverName,
                     onAccept = {
                         stopRing()
                         CallController.answer()
@@ -127,7 +134,8 @@ class IncomingCallActivity : ComponentActivity() {
 }
 
 @Composable
-private fun IncomingScreen(from: String, text: String, onAccept: () -> Unit, onDecline: () -> Unit) {
+private fun IncomingScreen(from: String, text: String, serverName: String?,
+                           onAccept: () -> Unit, onDecline: () -> Unit) {
     val agentName = Bus.agentName.value
     Column(
         modifier = Modifier
@@ -139,10 +147,14 @@ private fun IncomingScreen(from: String, text: String, onAccept: () -> Unit, onD
     ) {
         AgentAvatar(110.dp, 44.sp)
         Spacer(Modifier.height(20.dp))
-        Text("Llamada entrante", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        Text(stringResource(R.string.incoming_call), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         Spacer(Modifier.height(6.dp))
         Text(agentName, fontSize = 30.sp, fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground)
+        if (serverName != null) {
+            Text(stringResource(R.string.via_server, serverName),
+                color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+        }
         if (text.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
@@ -153,7 +165,7 @@ private fun IncomingScreen(from: String, text: String, onAccept: () -> Unit, onD
             modifier = Modifier.fillMaxWidth().height(64.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
         ) {
-            Text("Responder", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.answer), fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(12.dp))
         TextButton(
@@ -163,7 +175,7 @@ private fun IncomingScreen(from: String, text: String, onAccept: () -> Unit, onD
                 containerColor = Color(0x33EF4444),
                 contentColor = Color(0xFFEF4444)),
         ) {
-            Text("Rechazar", fontSize = 18.sp)
+            Text(stringResource(R.string.decline), fontSize = 18.sp)
         }
     }
 }

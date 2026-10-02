@@ -19,22 +19,30 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Servicio en primer plano: mantiene la conexion con el servidor Interfon.
+ * Servicio en primer plano: mantiene la conexion con TODOS los servidores Interfon.
  *
- * Ciclo gestionado: intenta la URL guardada; si falla repetidamente, escanea
- * la red local en busca del servidor (ServerDiscovery) y actualiza la URL.
+ * Cada servidor tiene su propio ciclo de conexion (independiente: si uno cae, los
+ * demas siguen). Si ninguno esta conectado, escanea la red local
+ * (ServerDiscovery) y agrega a la lista los servidores nuevos que encuentre.
  */
 class ConnectionService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var ws: WsClient? = null
-    private var loopJob: Job? = null
+
+    /** Ciclo activo por servidor (id -> URL con la que se lanzo y su Job). */
+    private val loops = HashMap<String, Pair<String, Job>>()
+    private val clients = ConcurrentHashMap<String, WsClient>()
+    private var supervisorJob: Job? = null
     private var collectorJob: Job? = null
 
-    @Volatile private var discoverOnNext = false
     @Volatile private var lastDiscoveryAt = 0L
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(Lang.wrap(base))
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -45,49 +53,50 @@ class ConnectionService : Service() {
             return START_NOT_STICKY
         }
         startAsForeground(getString(R.string.notif_service_text))
+        ensureCollector()
         when (intent?.action) {
             ACTION_DISCOVER -> {
-                discoverOnNext = true
-                restartLoop()
+                syncLoops(restartAll = false)
+                scope.launch { tryDiscover(manual = true) }
             }
-            ACTION_RECONNECT -> restartLoop()
-            else -> if (loopJob == null) startLoop()
+            ACTION_RECONNECT -> syncLoops(restartAll = true)
+            else -> syncLoops(restartAll = false)
         }
+        if (supervisorJob == null) supervisorJob = scope.launch { supervisor() }
         return START_STICKY
     }
 
-    // ---------- ciclo de conexion ----------
+    // ---------- ciclos de conexion ----------
 
-    private fun startLoop() {
-        ensureCollector()
-        loopJob = scope.launch { connectionLoop() }
+    /** Alinea los ciclos activos con la lista guardada (altas, bajas y cambios de URL). */
+    @Synchronized
+    private fun syncLoops(restartAll: Boolean) {
+        val list = Servers.load(this)
+        Bus.servers.value = list
+        val ids = list.map { it.id }.toSet()
+        for (id in loops.keys.toList()) {
+            val url = loops.getValue(id).first
+            val entry = list.firstOrNull { it.id == id }
+            if (entry == null || entry.url != url || restartAll) {
+                loops.remove(id)?.second?.cancel()
+                clients.remove(id)?.close()
+                if (entry == null) Bus.setServerConn(id, null)
+            }
+        }
+        Bus.serverConn.value.keys.filterNot { it in ids }.forEach { Bus.setServerConn(it, null) }
+        for (entry in list) {
+            if (entry.id !in loops) {
+                loops[entry.id] = entry.url to scope.launch { serverLoop(entry) }
+            }
+        }
     }
 
-    private fun restartLoop() {
-        loopJob?.cancel()
-        ws?.close()
-        startLoop()
-    }
-
-    private suspend fun connectionLoop() {
+    private suspend fun serverLoop(entry: ServerEntry) {
         var failures = 0
-        // La cancelacion del scope corta el bucle en delay()/await()
+        // La cancelacion del Job corta el bucle en delay()/await()
         while (true) {
-            if (discoverOnNext) {
-                discoverOnNext = false
-                tryDiscover()
-            }
-            val url = Prefs.url(this@ConnectionService)
-            Bus.serverUrl.value = url
-            val connected = connectOnce(url)
+            val connected = connectOnce(entry)
             failures = if (connected) 0 else failures + 1
-            if (!connected) {
-                // Auto-descubrimiento: maximo una vez cada 15 s
-                val now = System.currentTimeMillis()
-                if (now - lastDiscoveryAt > 15000) {
-                    tryDiscover()
-                }
-            }
             delay(when {
                 connected -> 400
                 failures > 6 -> 8000
@@ -96,50 +105,77 @@ class ConnectionService : Service() {
         }
     }
 
-    /** Escanea la red; si encuentra el servidor, lo guarda como URL activa. */
-    private suspend fun tryDiscover(): Boolean {
-        lastDiscoveryAt = System.currentTimeMillis()
-        Bus.connection.value = Bus.Conn.CONNECTING
-        Bus.serverUrl.value = "buscando servidor en la red…"
-        val found = ServerDiscovery.discover()
-        return if (found != null) {
-            Prefs.setUrl(this, found)
-            Bus.serverUrl.value = found
-            true
-        } else {
-            false
+    /** Si no hay ningun servidor conectado, busca en la red (como maximo cada 20 s). */
+    private suspend fun supervisor() {
+        while (true) {
+            delay(5000)
+            val none = Bus.connectedIds().isEmpty()
+            if (none && Prefs.autoDiscovery(this) &&
+                System.currentTimeMillis() - lastDiscoveryAt > 20000) {
+                tryDiscover(manual = false)
+            }
         }
     }
 
-    /** Conecta a la URL y suspende hasta que la conexion caiga. */
-    private suspend fun connectOnce(url: String): Boolean {
-        Bus.connection.value = Bus.Conn.CONNECTING
-        Bus.serverUrl.value = url
+    /** Escanea la red y agrega los servidores nuevos a la lista. */
+    private suspend fun tryDiscover(manual: Boolean) {
+        if (Bus.discovering.value) return
+        lastDiscoveryAt = System.currentTimeMillis()
+        Bus.discovering.value = true
+        try {
+            val found = ServerDiscovery.discoverAll()
+            val added = Servers.addDiscovered(this, found)
+            if (added > 0) {
+                syncLoops(restartAll = false)
+                Bus.events.tryEmit(Lang.str(R.string.servers_found, added))
+            } else if (manual) {
+                Bus.events.tryEmit(Lang.str(R.string.no_servers_found))
+            }
+        } finally {
+            Bus.discovering.value = false
+        }
+    }
+
+    /** Conecta a un servidor y suspende hasta que la conexion caiga. */
+    private suspend fun connectOnce(entry: ServerEntry): Boolean {
+        Bus.setServerConn(entry.id, Bus.Conn.CONNECTING)
         val initial = CompletableDeferred<Boolean>()
         val ended = CompletableDeferred<Unit>()
+        // Tras descartar este cliente, sus callbacks tardios no deben pisar el estado
+        // ni los mensajes de la conexion que lo reemplace.
+        var alive = true
         val client = WsClient(
-            httpUrl = url,
-            onJson = { CallController.onJson(it) },
-            onBinary = { CallController.onBinary(it) },
+            httpUrl = entry.url,
+            onJson = { if (alive) CallController.onJson(entry.id, it) },
+            onBinary = { if (alive) CallController.onBinary(entry.id, it) },
             onConn = { ok ->
-                Bus.connection.value = if (ok) Bus.Conn.CONNECTED else Bus.Conn.DISCONNECTED
+                if (alive) {
+                    Bus.setServerConn(entry.id,
+                        if (ok) Bus.Conn.CONNECTED else Bus.Conn.DISCONNECTED)
+                }
                 if (!ok) ended.complete(Unit)
             },
             autoRetry = false,
             onInitial = { ok -> initial.complete(ok) },
         )
-        ws = client
-        CallController.attach(client)
-        client.connect()
-
-        val ok = withTimeoutOrNull(10000) { initial.await() } == true
-        if (!ok) {
+        clients.put(entry.id, client)?.close()
+        CallController.attach(entry.id, client)
+        try {
+            client.connect()
+            val ok = withTimeoutOrNull(10000) { initial.await() } == true
+            if (!ok) {
+                client.close()
+                Bus.setServerConn(entry.id, Bus.Conn.DISCONNECTED)
+                return false
+            }
+            ended.await() // mantener hasta que se pierda la conexion
+            return true
+        } finally {
+            alive = false
             client.close()
-            Bus.connection.value = Bus.Conn.DISCONNECTED
-            return false
+            CallController.detach(entry.id, client)
+            clients.remove(entry.id, client)
         }
-        ended.await() // mantener hasta que se pierda la conexion
-        return true
     }
 
     private fun ensureCollector() {
@@ -158,6 +194,17 @@ class ConnectionService : Service() {
                 }
             }
         }
+        // Texto de la notificacion fija: cuantos servidores hay conectados
+        scope.launch {
+            Bus.serverConn.collectLatest { conn ->
+                val total = Bus.servers.value.size
+                val ok = conn.values.count { it == Bus.Conn.CONNECTED }
+                val loc = Lang.localized(this@ConnectionService)
+                startAsForeground(
+                    if (ok > 0) loc.getString(R.string.notif_service_connected, ok, total)
+                    else loc.getString(R.string.notif_service_text))
+            }
+        }
         CallController.setPushMessageHandler { _ ->
             if (!Bus.appInForeground.value) showAnnounceNotification()
         }
@@ -170,8 +217,8 @@ class ConnectionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notif = NotificationCompat.Builder(this, InterfonApp.CH_MESSAGES)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle("Interfon")
-            .setContentText("Audio entrante del agente")
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.notif_announce_text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setFullScreenIntent(fullScreen, true)
@@ -235,8 +282,9 @@ class ConnectionService : Service() {
 
         val notif = NotificationCompat.Builder(this, InterfonApp.CH_CALLS)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle("Llamada de ${call.from}")
-            .setContentText(call.text.ifEmpty { "Telefono interno del agente" })
+            .setContentTitle(getString(R.string.call_from, call.from))
+            .setContentText(call.text.ifEmpty {
+                Bus.serverName(call.serverId) ?: getString(R.string.home_subtitle) })
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setFullScreenIntent(fullScreen, true)
@@ -254,7 +302,7 @@ class ConnectionService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
-        ws?.close()
+        clients.values.forEach { it.close() }
         super.onDestroy()
     }
 
@@ -270,12 +318,12 @@ class ConnectionService : Service() {
             ctx.startForegroundService(intent(ctx))
         }
 
-        /** Reconectar con la URL guardada (tras guardar cambios en Ajustes). */
+        /** Reconectar con la lista guardada (tras cambios en Ajustes). */
         fun restart(ctx: Context) {
             ctx.startForegroundService(intent(ctx, ACTION_RECONNECT))
         }
 
-        /** Buscar el servidor en la red y conectar al que aparezca. */
+        /** Buscar servidores en la red y agregar los nuevos. */
         fun discover(ctx: Context) {
             ctx.startForegroundService(intent(ctx, ACTION_DISCOVER))
         }

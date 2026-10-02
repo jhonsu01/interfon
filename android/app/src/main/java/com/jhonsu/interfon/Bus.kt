@@ -2,6 +2,7 @@ package com.jhonsu.interfon
 
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 /** Estado compartido entre el servicio, el controlador de llamadas y la UI. */
 object Bus {
@@ -11,10 +12,36 @@ object Bus {
     data class Line(val role: String, val text: String, val ctx: String,
                     val ts: Long = System.currentTimeMillis())
 
-    data class IncomingCall(val callId: String, val from: String, val text: String)
+    /** Llamada entrante; serverId indica que servidor la origino. */
+    data class IncomingCall(val callId: String, val from: String, val text: String,
+                            val serverId: String = "")
 
+    /** Estado combinado: CONNECTED si al menos un servidor lo esta. */
     val connection = MutableStateFlow(Conn.DISCONNECTED)
-    val serverUrl = MutableStateFlow("")
+
+    /** Servidores configurados (orden = prioridad) y estado de cada uno por id. */
+    val servers = MutableStateFlow<List<ServerEntry>>(emptyList())
+    val serverConn = MutableStateFlow<Map<String, Conn>>(emptyMap())
+    val discovering = MutableStateFlow(false)
+
+    fun setServerConn(id: String, c: Conn?) {
+        // Un socket que cierra tarde no debe resucitar un servidor ya eliminado
+        if (c != null && servers.value.none { it.id == id }) return
+        serverConn.update { if (c == null) it - id else it + (id to c) }
+        android.util.Log.d("Interfon", "server $id -> $c")
+        val all = serverConn.value.values
+        connection.value = when {
+            Conn.CONNECTED in all -> Conn.CONNECTED
+            Conn.CONNECTING in all || discovering.value -> Conn.CONNECTING
+            else -> Conn.DISCONNECTED
+        }
+    }
+
+    /** Servidores conectados, en orden de prioridad. */
+    fun connectedIds(): List<String> =
+        servers.value.map { it.id }.filter { serverConn.value[it] == Conn.CONNECTED }
+
+    fun serverName(id: String?): String? = servers.value.firstOrNull { it.id == id }?.name
 
     /** Transcripcion de la conversacion (llamada y walkie). */
     val lines = MutableStateFlow<List<Line>>(emptyList())

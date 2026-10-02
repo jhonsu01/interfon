@@ -9,14 +9,24 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.ConcurrentHashMap
 
-/** Orquesta llamadas y walkie contra el servidor. */
+/**
+ * Orquesta llamadas y walkie contra varios servidores a la vez.
+ *
+ * - Cualquier servidor puede llamar o enviar audios (se reciben de todos).
+ * - Una llamada queda ligada al servidor que la origino ([callServer]).
+ * - Lo saliente (llamar, walkie) va al primer servidor conectado en orden de
+ *   prioridad; si el envio falla se prueba el siguiente (failover).
+ */
 object CallController {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val playMutex = Mutex()
 
-    private var ws: WsClient? = null
+    private val clients = ConcurrentHashMap<String, WsClient>()
+    @Volatile private var callServer: String? = null
+    @Volatile private var walkieServer: String? = null
     private var onPushMessage: ((String) -> Unit)? = null
 
     /** Callback que el servicio registra para notificar audios push. */
@@ -24,25 +34,50 @@ object CallController {
         onPushMessage = h
     }
 
-    fun attach(client: WsClient) {
-        ws = client
+    fun attach(serverId: String, client: WsClient) {
+        clients[serverId] = client
     }
+
+    /** El servidor se desconecto: cerrar lo que dependiera de el. */
+    fun detach(serverId: String, client: WsClient) {
+        // Si ya lo reemplazo una conexion nueva del mismo servidor, no tocar nada
+        if (!clients.remove(serverId, client)) return
+        pending.remove(serverId)
+        if (Bus.incoming.value?.serverId == serverId) Bus.incoming.value = null
+        if (callServer == serverId && Bus.callActive.value) {
+            stopMic()
+            Bus.resetCall()
+            callServer = null
+            Bus.events.tryEmit(Lang.str(R.string.call_lost, Bus.serverName(serverId) ?: ""))
+        }
+        if (walkieServer == serverId && Bus.walkieBusy.value) {
+            Bus.walkieBusy.value = false
+            walkieServer = null
+        }
+    }
+
+    private fun send(serverId: String?, json: JSONObject): Boolean =
+        serverId?.let { clients[it]?.sendJson(json) } ?: false
+
+    /** Envia al primer servidor conectado que acepte el mensaje; devuelve su id. */
+    private fun sendToFirst(json: JSONObject): String? =
+        Bus.connectedIds().firstOrNull { clients[it]?.sendJson(json) == true }
 
     // ---------- acciones del usuario ----------
 
     fun startOutgoingCall(): Boolean {
-        val ok = ws?.sendJson(JSONObject().put("type", "call_outgoing")) ?: false
-        if (ok) {
-            Bus.callActive.value = true
-            Bus.callState.value = "listening"
-            startMic()
-        }
-        return ok
+        val id = sendToFirst(JSONObject().put("type", "call_outgoing")) ?: return false
+        callServer = id
+        Bus.callActive.value = true
+        Bus.callState.value = "listening"
+        startMic()
+        return true
     }
 
     fun answer() {
         val call = Bus.incoming.value ?: return
-        ws?.sendJson(JSONObject().put("type", "call_answer").put("call_id", call.callId))
+        send(call.serverId, JSONObject().put("type", "call_answer").put("call_id", call.callId))
+        callServer = call.serverId
         Bus.incoming.value = null
         Bus.callActive.value = true
         Bus.callState.value = "listening"
@@ -51,15 +86,19 @@ object CallController {
 
     fun decline() {
         val call = Bus.incoming.value ?: return
-        ws?.sendJson(JSONObject().put("type", "call_decline").put("call_id", call.callId))
+        send(call.serverId, JSONObject().put("type", "call_decline").put("call_id", call.callId))
         Bus.resetCall()
     }
 
     fun hangup() {
-        ws?.sendJson(JSONObject().put("type", "hangup"))
+        send(callServer, JSONObject().put("type", "hangup"))
+        callServer = null
         stopMic()
         Bus.resetCall()
     }
+
+    /** Nombre del servidor de la llamada en curso (para mostrarlo en pantalla). */
+    fun callServerName(): String? = Bus.serverName(callServer)
 
     // ---------- walkie ----------
 
@@ -85,19 +124,25 @@ object CallController {
         Bus.micLevel.value = 0f
         val pcm = synchronized(walkieBuffer) { walkieBuffer.toByteArray() }
         if (pcm.size < 6400) { // < 0.2s: descartar toque accidental
-            Bus.events.tryEmit("Clip demasiado corto")
+            Bus.events.tryEmit(Lang.str(R.string.clip_too_short))
             endAudioSession()
             return
         }
+        val id = sendToFirst(JSONObject().put("type", "walkie_tx"))
+        if (id == null) {
+            Bus.events.tryEmit(Lang.str(R.string.no_connection))
+            endAudioSession()
+            return
+        }
+        walkieServer = id
         Bus.walkieBusy.value = true
-        ws?.sendJson(JSONObject().put("type", "walkie_tx"))
-        ws?.sendBytes(AudioEngine.pcmToWav(pcm))
+        clients[id]?.sendBytes(AudioEngine.pcmToWav(pcm))
         // Seguro: nunca quedar "Procesando..." para siempre
         scope.launch {
             delay(60_000)
             if (Bus.walkieBusy.value) {
                 Bus.walkieBusy.value = false
-                Bus.events.tryEmit("El servidor no respondio (60s)")
+                Bus.events.tryEmit(Lang.str(R.string.server_no_reply))
             }
         }
     }
@@ -132,10 +177,10 @@ object CallController {
             // Half-duplex: enviar solo mientras el servidor escucha y no reproducimos
             if (Bus.callActive.value && Bus.callState.value == "listening" &&
                 !Bus.playing.value) {
-                ws?.sendBytes(chunk)
+                callServer?.let { clients[it]?.sendBytes(chunk) }
             }
         }
-        if (!ok) Bus.events.tryEmit("Sin permiso de microfono")
+        if (!ok) Bus.events.tryEmit(Lang.str(R.string.no_mic))
         micStarted = ok
     }
 
@@ -148,66 +193,74 @@ object CallController {
 
     // ---------- eventos del servidor ----------
 
-    private var pendingAudioKind = ""
-    private var pendingAudioText = ""
+    /** Por servidor: tipo y texto del proximo binario (JSON y audio llegan por el mismo socket). */
+    private val pending = ConcurrentHashMap<String, Pair<String, String>>()
 
-    fun onJson(msg: JSONObject) {
+    fun onJson(serverId: String, msg: JSONObject) {
+        val isCallServer = callServer == serverId
         when (msg.optString("type")) {
             "welcome" -> Unit
 
             "incoming_call" -> {
-                Bus.incoming.value = Bus.IncomingCall(
-                    msg.optString("call_id"),
-                    msg.optString("from", "Agente"),
-                    msg.optString("text"))
+                val busy = Bus.callActive.value ||
+                    (Bus.incoming.value != null && Bus.incoming.value?.serverId != serverId)
+                if (busy) {
+                    // Ya hay una llamada con otro servidor: rechazar como ocupado
+                    send(serverId, JSONObject().put("type", "call_decline")
+                        .put("call_id", msg.optString("call_id")))
+                } else {
+                    Bus.incoming.value = Bus.IncomingCall(
+                        msg.optString("call_id"),
+                        msg.optString("from", Lang.str(R.string.agent_default)),
+                        msg.optString("text"),
+                        serverId)
+                }
             }
 
-            "call_started" -> {
+            "call_started" -> if (callServer == null || isCallServer) {
+                callServer = serverId
                 Bus.callActive.value = true
                 if (Bus.callState.value == "idle") Bus.callState.value = "listening"
                 startMic()
             }
 
-            "call_state" -> Bus.callState.value = msg.optString("state")
+            "call_state" -> if (isCallServer) Bus.callState.value = msg.optString("state")
 
             "transcript" -> Bus.addLine(
                 msg.optString("role"), msg.optString("text"), msg.optString("ctx", "call"))
 
-            "agent_audio" -> {
-                pendingAudioKind = msg.optString("kind", "call")
-                pendingAudioText = msg.optString("text")
-            }
+            "agent_audio" -> pending[serverId] =
+                msg.optString("kind", "call") to msg.optString("text")
 
             // Mensaje push del servidor: el binario que sigue es un anuncio
-            "agent_message" -> {
-                pendingAudioKind = "message"
-                pendingAudioText = msg.optString("text")
-            }
+            "agent_message" -> pending[serverId] = "message" to msg.optString("text")
 
             "agent_audio_end" -> Unit
 
             "call_end" -> {
-                stopMic()
-                val reason = msg.optString("reason")
-                Bus.resetCall()
-                if (reason.isNotEmpty() && reason != "colgada por el usuario") {
-                    Bus.events.tryEmit("Llamada finalizada: $reason")
+                if (Bus.incoming.value?.serverId == serverId) Bus.incoming.value = null
+                if (isCallServer) {
+                    stopMic()
+                    callServer = null
+                    val reason = msg.optString("reason")
+                    Bus.resetCall()
+                    if (reason.isNotEmpty() && reason != "colgada por el usuario") {
+                        Bus.events.tryEmit(Lang.str(R.string.call_ended, reason))
+                    }
                 }
             }
 
-            "walkie_done", "walkie_empty" -> {
+            "walkie_done", "walkie_empty" -> if (walkieServer == null || walkieServer == serverId) {
+                walkieServer = null
                 Bus.walkieBusy.value = false
                 if (!walkieRecording) endAudioSession()
             }
         }
     }
 
-    fun onBinary(data: ByteArray) {
+    fun onBinary(serverId: String, data: ByteArray) {
         if (data.size < 4 || String(data, 0, 4) != "RIFF") return
-        val kind = pendingAudioKind
-        val text = pendingAudioText
-        pendingAudioKind = ""
-        pendingAudioText = ""
+        val (kind, text) = pending.remove(serverId) ?: ("" to "")
         val isAnnounce = kind == "message"
         if (isAnnounce) Bus.announce.value = text
         Bus.playing.value = true

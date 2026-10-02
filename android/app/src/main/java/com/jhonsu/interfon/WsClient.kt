@@ -38,6 +38,7 @@ class WsClient(
     @Volatile private var closedByUser = false
     @Volatile private var attempts = 0
     @Volatile private var initialReported = false
+    @Volatile private var opened = false
 
     fun connect() {
         closedByUser = false
@@ -48,6 +49,8 @@ class WsClient(
         val req = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
+                if (closedByUser) { ws.cancel(); return }
+                opened = true
                 attempts = 0
                 reportInitial(true)
                 onConn(true)
@@ -64,6 +67,7 @@ class WsClient(
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                android.util.Log.d("Interfon", "ws $httpUrl failure: ${t.javaClass.simpleName} ${t.message}")
                 reportInitial(false)
                 onConn(false)
                 if (autoRetry) scheduleReconnect()
@@ -101,6 +105,8 @@ class WsClient(
 
     fun close() {
         closedByUser = true
-        webSocket?.close(1000, "reconexion")
+        // Un socket que aun no abrio se aborta: si se cerrara "con cortesia" llegaria
+        // a abrirse en el servidor y desplazaria a la conexion nueva (politica: un telefono)
+        if (opened) webSocket?.close(1000, "reconexion") else webSocket?.cancel()
     }
 }

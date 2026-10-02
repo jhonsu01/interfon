@@ -1,5 +1,7 @@
 # 📞 Interfon — Teléfono interno con tu agente de IA
 
+**Español** · [English](docs/i18n/README.en.md) · [中文](docs/i18n/README.zh.md) · [Português](docs/i18n/README.pt.md) · [한국어](docs/i18n/README.ko.md) · [Русский](docs/i18n/README.ru.md) · [日本語](docs/i18n/README.ja.md) · [Français](docs/i18n/README.fr.md)
+
 **Interfon** convierte tu PC y tu Android en un teléfono interno por voz: el agente puede
 **llamarte**, **conversar contigo** y **enviarte audios**; tú puedes llamarlo o usar el modo
 **walkie-talkie**. Todo corre **en local** (tu red WiFi) contra tu propia API de inferencia
@@ -18,7 +20,7 @@
    │  │  · voz Piper (Daniela)   │    └───────────────────────────┘  │
    │  └───────────┬──────────────┘                                   │
    └──────────────┼──────────────────────────────────────────────────┘
-                  │ WebSocket (JSON + audio), WiFi local
+                  │ WebSocket (JSON + audio), WiFi local — uno o varios PCs
                   ▼
    ┌───────────────────────── Android ──────────────────────────────┐
    │  App Interfon (Compose, modo oscuro)                           │
@@ -42,7 +44,10 @@
 | 🗣️ Voz del agente | **Piper `es_AR-daniela-high`** (femenina argentina) con respaldo SAPI (Sabina es-MX). Otras voces: `python scripts/download_voice.py --list`. |
 | 🌓 Modo oscuro | Forzado, Material 3, tema verde sobre negro azulado. |
 | ✍️ Transcripción | Todo lo dicho (por ambos) aparece en pantalla y se registra en `server/logs/`. |
-| 📡 Auto-descubrimiento | La app escanea la red local y encuentra el servidor sola (sin configurar IP). |
+| 📡 Auto-descubrimiento | La app escanea la red local y agrega sola **todos** los servidores que encuentre (sin configurar IP). |
+| 🖧 Varios servidores | Conexión simultánea con varios PCs. Cualquiera puede llamarte o enviarte audios; tus llamadas y el walkie salen por el primero conectado de la lista y, si cae, toma el relevo el siguiente (failover). Cada servidor lleva un **nombre personalizable**. |
+| 📋 Lista plegable | En Inicio, la tarjeta de servidores se pliega y muestra el contador `conectados/total`; desplegada, el estado de cada uno. |
+| 🌐 8 idiomas | Español, English, 中文, Português, 한국어, Русский, 日本語 y Français. Se elige al primer arranque y se cambia en **Ajustes → Idioma** (en Android 13+ también en *Ajustes del sistema → Idioma de la app*). |
 
 ## Puesta en marcha
 
@@ -61,20 +66,35 @@ cd server
 Requisitos: **Unsloth Studio** (u otra API compatible OpenAI) corriendo en `127.0.0.1:8888`
 sin contraseña. Configura base/modelos en `server/.env`.
 
+Puedes repetirlo en varios PCs: la app se conecta a todos a la vez.
+
 ### 2. Android: la app
 
 Instala el APK de la última [release](../../releases) (`Interfon-vX.Y.Z.apk`, firmado).
 Al abrirla:
 
-1. Concede micrófono y notificaciones.
-2. **Nada más**: la app descubre el servidor sola (escanea la red local, valida
-   `/api/status` y conecta). Si la IP del PC cambia, lo re-encuentra automáticamente.
-   También puedes forzarlo con el botón **🔎 Buscar servidor en la red**.
-3. El indicador debe pasar a **Conectado al servidor**.
+1. Elige el idioma (solo la primera vez).
+2. Concede micrófono y notificaciones.
+3. **Nada más**: la app descubre los servidores sola (escanea la red local, valida
+   `/api/status` y conecta con todos). Si no hay ninguno conectado, vuelve a buscar
+   automáticamente. También puedes forzarlo con **🔎 Buscar servidores en la red**.
+4. La tarjeta **Servidores** muestra `conectados/total`; tócala para plegarla o desplegarla.
 
-> Si prefieres fijar la IP a mano: **Ajustes** → URL `http://<IP-PC>:8765` →
-> "Guardar y reconectar". Con USB también sirve `adb reverse tcp:8765 tcp:8765`
-> y la URL `http://127.0.0.1:8765`.
+#### Varios servidores
+
+En **Ajustes → Servidores** puedes:
+
+- **Agregar** un servidor a mano (`192.168.1.50`, `192.168.1.50:8765` o la URL completa).
+- **Renombrarlo** (p. ej. "PC oficina", "Portátil") o cambiar su URL con ✏️.
+- **Subir su prioridad** con ⬆️: el primero conectado de la lista atiende tus llamadas
+  salientes y el walkie; si se cae, la app pasa al siguiente sin que hagas nada.
+- **Eliminarlo** desde el mismo diálogo de edición.
+
+Todos los servidores pueden llamarte y enviarte audios a la vez. Si estás en una llamada
+con uno y otro intenta llamarte, la app lo rechaza como "ocupado".
+
+> Con USB también sirve `adb reverse tcp:8765 tcp:8765` y agregar el servidor
+> `http://127.0.0.1:8765`.
 
 ### 3. Hablar
 
@@ -186,7 +206,7 @@ habilidades. Para escribirle desde el PC: `$S server/telegram_send.py "texto"`.
 
 ```
 Interfon/
-├── android/               # App Kotlin + Compose (modo oscuro, iconos adaptativos)
+├── android/               # App Kotlin + Compose (modo oscuro, iconos adaptativos, 8 idiomas)
 ├── server/                # FastAPI + WebSocket + proveedores (Unsloth API, Piper, SAPI)
 │   ├── interfon_server/   #   main (protocolo), providers, vad, wavutil, state, config
 │   ├── serve.py           #   arranque
@@ -198,6 +218,7 @@ Interfon/
 │   ├── download_voice.py  #   voces Piper desde HuggingFace
 │   └── publish_release.py #   bump + build + release en GitHub
 ├── docs/arquitectura.md   # protocolo WebSocket detallado
+├── docs/i18n/             # este README en 7 idiomas más
 └── directives/            # POE de operación del proyecto
 ```
 

@@ -3,6 +3,7 @@ package com.jhonsu.interfon
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 
 class InterfonApp : Application() {
 
@@ -12,21 +13,28 @@ class InterfonApp : Application() {
         Bus.speaker.value = Prefs.speaker(this)
         Bus.agentName.value = Prefs.agentName(this)
         Bus.agentPhoto.value = Contact.load(this)
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(
-            NotificationChannel(CH_SERVICE, getString(R.string.channel_service),
-                NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) })
-        nm.createNotificationChannel(
-            NotificationChannel(CH_CALLS, getString(R.string.channel_calls),
-                NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Llamadas entrantes del agente"
-            })
-        nm.createNotificationChannel(
-            NotificationChannel(CH_MESSAGES, getString(R.string.channel_messages),
-                NotificationManager.IMPORTANCE_DEFAULT))
+        Bus.servers.value = Servers.load(this)
+        Lang.syncSystem(this)
+        createChannels(Lang.localized(this))
     }
 
     companion object {
+        /** Crea (o renombra, al cambiar de idioma) los canales de notificacion. */
+        fun createChannels(ctx: Context) {
+            val nm = ctx.getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel(CH_SERVICE, ctx.getString(R.string.channel_service),
+                    NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) })
+            nm.createNotificationChannel(
+                NotificationChannel(CH_CALLS, ctx.getString(R.string.channel_calls),
+                    NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = ctx.getString(R.string.channel_calls_desc)
+                })
+            nm.createNotificationChannel(
+                NotificationChannel(CH_MESSAGES, ctx.getString(R.string.channel_messages),
+                    NotificationManager.IMPORTANCE_DEFAULT))
+        }
+
         const val CH_SERVICE = "interfon_service"
         const val CH_CALLS = "interfon_calls"
         const val CH_MESSAGES = "interfon_messages"
