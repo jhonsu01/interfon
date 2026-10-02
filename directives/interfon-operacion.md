@@ -49,3 +49,4 @@ llamadas, walkie-talkie y audios push, todo local.
 | 2026-10-01 | BOM 2026.09 exige AGP 9.1 | Bajar a BOM 2026.06.01 + lifecycle 2.10.0 |
 | 2026-10-01 | audioop eliminado en Py 3.13+ | RMS manual en vad.py |
 | 2026-10-01 | App se cerraba al abrir por primera vez (Android 14+) | Nunca promover FGS con tipo `microphone` sin RECORD_AUDIO concedido; tipos dinámicos según permiso + fallback a `connectedDevice` |
+| 2026-10-01 | "Sin conexión" eterna con IP correcta y firewall abierto | Android 9+ bloquea cleartext por defecto: apps LAN con `http://` requieren `android:usesCleartextTraffic="true"` en el manifest |
