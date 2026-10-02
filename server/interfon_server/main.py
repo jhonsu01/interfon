@@ -26,8 +26,12 @@ Protocolo WebSocket (JSON para control, binario para audio):
 import asyncio
 import json
 import logging
+import re
+import shutil
+import socket
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
@@ -70,6 +74,59 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Interfon Server", version=__version__, lifespan=lifespan)
+
+
+# ============================================================
+# Contexto real del sistema (el LLM no debe inventar nada de esto)
+# ============================================================
+
+_DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _fecha_hora(now: datetime | None = None) -> str:
+    now = now or datetime.now()
+    return (f"{_DIAS[now.weekday()]} {now.day} de {_MESES[now.month - 1]} "
+            f"de {now.year}, {now.hour:02d}:{now.minute:02d}")
+
+
+def _system_context() -> str:
+    now = datetime.now()
+    try:
+        disco_libre = shutil.disk_usage("C:\\").free / 1e9
+        disco = f"{disco_libre:.0f} GB libres en C:"
+    except Exception:
+        disco = "desconocido"
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+    except Exception:
+        ip = "desconocida"
+    return (
+        "CONTEXTO REAL DEL SISTEMA (fuente de verdad; NUNCA inventes estos datos):\n"
+        f"- Fecha y hora actual: {_fecha_hora(now)}\n"
+        f"- Equipo: {socket.gethostname()} (Windows, servidor Interfon v{__version__})\n"
+        f"- Uptime del servidor: {int(time.time() - state.started)}s\n"
+        f"- Disco: {disco} · IP local: {ip}\n"
+        "Si te preguntan por la fecha, hora o estado del sistema, usa ESTE contexto. "
+        "Si algo no está aquí, dilo con honestidad en vez de adivinar."
+    )
+
+
+def _chat_messages(history: list) -> list:
+    return [{"role": "system", "content": f"{CFG.system_prompt}\n\n{_system_context()}"},
+            *history]
+
+
+def _fast_answer(text: str) -> str | None:
+    """Respuestas deterministas para datos que jamas deben fallar."""
+    t = text.lower()
+    now = datetime.now()
+    if re.search(r"\b(que|qué|q)\b.*\b(d[ií]a|fecha)\b|^hoy\b|\bfecha de hoy\b", t):
+        return f"Hoy es {_fecha_hora(now).split(',')[0]}."
+    if re.search(r"\b(que|qué)\b.*\bhora\b|^hora\b|\bhora es\b", t):
+        return f"Son las {now.hour:02d} horas con {now.minute:02d} minutos."
+    return None
 
 
 # ============================================================
@@ -125,10 +182,8 @@ async def push_message(body: MessageBody):
     if not text:
         raise HTTPException(400, detail="text vacio")
     if body.reply:
-        text = await run_in_threadpool(
-            api.chat,
-            [{"role": "system", "content": CFG.system_prompt},
-             {"role": "user", "content": text}])
+        text = _fast_answer(text) or await run_in_threadpool(
+            api.chat, _chat_messages([{"role": "user", "content": text}]))
     wav = await run_in_threadpool(tts_synthesize, text)
     msg = {"type": "agent_message", "title": CFG.agent_name, "text": text}
     if state.phone_connected:
@@ -170,9 +225,8 @@ async def _process_utterance(session, pcm: bytes) -> None:
         await state.log_event("stt", ctx="call", text=text)
         session.history.append({"role": "user", "content": text})
         session.trim()
-        reply = await run_in_threadpool(
-            api.chat,
-            [{"role": "system", "content": CFG.system_prompt}, *session.history])
+        fast = _fast_answer(text)
+        reply = fast or await run_in_threadpool(api.chat, _chat_messages(session.history))
         session.history.append({"role": "assistant", "content": reply})
         session.trim()
         await state.broadcast({"type": "transcript", "role": "agent", "text": reply, "ctx": "call"})
@@ -221,9 +275,9 @@ async def _process_walkie(wav_bytes: bytes) -> None:
         await state.log_event("stt", ctx="walkie", text=text)
         state.walkie_history.append({"role": "user", "content": text})
         state.walkie_history = state.walkie_history[-(CFG.history_turns * 2):]
-        reply = await run_in_threadpool(
-            api.chat,
-            [{"role": "system", "content": CFG.system_prompt}, *state.walkie_history])
+        fast = _fast_answer(text)
+        reply = fast or await run_in_threadpool(
+            api.chat, _chat_messages(state.walkie_history))
         state.walkie_history.append({"role": "assistant", "content": reply})
         await state.broadcast({"type": "transcript", "role": "agent", "text": reply, "ctx": "walkie"})
         await state.log_event("agent", ctx="walkie", text=reply)
