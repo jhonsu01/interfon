@@ -178,6 +178,12 @@ object CallController {
                 pendingAudioText = msg.optString("text")
             }
 
+            // Mensaje push del servidor: el binario que sigue es un anuncio
+            "agent_message" -> {
+                pendingAudioKind = "message"
+                pendingAudioText = msg.optString("text")
+            }
+
             "agent_audio_end" -> Unit
 
             "call_end" -> {
