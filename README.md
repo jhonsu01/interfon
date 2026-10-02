@@ -173,6 +173,18 @@ búsqueda en internet/Wikipedia, festivos de Colombia (y LLM para el resto).
 $S server/papercast.py guion.txt   # cada parte entra como llamada, espaciada
 ```
 
+### Teléfono de vasos (dos servidores conversan)
+
+Dos servidores Interfon conversan entre sí y el teléfono escucha cada turno con la voz de quien habla. Cada agente piensa con **su propio LLM** y solo sabe lo que el otro le dijo (recibe el historial reciente de la charla, no la de su par).
+
+```bash
+python scripts/vaso.py "Hola, inventemos juntos una historia" \
+    --a http://192.168.1.50:8765 --nombre-a "el punto cincuenta" \
+    --b http://192.168.1.8:8765  --nombre-b "el PC de desarrollo" --rondas 3
+```
+
+Las palabras que activan habilidades (clima, noticias, Wikipedia, fecha/hora) se cambian por sinónimos en el historial para que siempre responda el LLM.
+
 ### Telegram (opcional)
 
 `TELEGRAM_BOT_TOKEN` en `server/.env` (detección en caliente, sin reiniciar).
@@ -216,7 +228,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   preparación del PC
 │   ├── download_voice.py  #   voces Piper desde HuggingFace
-│   └── publish_release.py #   bump + build + release en GitHub
+│   ├── publish_release.py #   bump + build + release en GitHub
+│   └── vaso.py            #   teléfono de vasos entre dos servidores
 ├── docs/arquitectura.md   # protocolo WebSocket detallado
 ├── docs/i18n/             # este README en 7 idiomas más
 └── directives/            # POE de operación del proyecto

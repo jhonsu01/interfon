@@ -166,6 +166,18 @@ curl -X POST http://127.0.0.1:8765/api/ask -H "Content-Type: application/json" \
 $S server/papercast.py script.txt   # 각 파트가 간격을 두고 전화처럼 도착
 ```
 
+### 종이컵 전화 (두 서버의 대화)
+
+두 Interfon 서버가 서로 대화하고, 휴대폰은 말하는 쪽의 목소리로 매 차례를 들려줍니다. 각 에이전트는 **자기 LLM**으로 생각하며 상대가 한 말만 압니다(최근 대화 기록을 받습니다).
+
+```bash
+python scripts/vaso.py "안녕, 같이 이야기를 지어 보자" \
+    --a http://192.168.1.50:8765 --nombre-a "50번" \
+    --b http://192.168.1.8:8765  --nombre-b "개발 PC" --rondas 3
+```
+
+기능을 호출하는 단어(날씨, 뉴스, 위키백과, 날짜/시간)는 기록에서 동의어로 바뀌어 항상 LLM이 답합니다.
+
 ### Telegram (선택)
 
 `server/.env`의 `TELEGRAM_BOT_TOKEN` (실행 중 감지, 재시작 불필요). 사용자는 `/start`로 채팅을
@@ -207,7 +219,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   PC 준비
 │   ├── download_voice.py  #   HuggingFace의 Piper 음성
-│   └── publish_release.py #   버전 올리기 + 빌드 + GitHub release
+│   ├── publish_release.py #   버전 올리기 + 빌드 + GitHub release
+│   └── vaso.py            #   두 서버 간 종이컵 전화
 ├── docs/arquitectura.md   # 자세한 WebSocket 프로토콜
 ├── docs/i18n/             # 이 README의 다른 7개 언어판
 └── directives/            # 프로젝트 운영 절차

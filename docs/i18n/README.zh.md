@@ -160,6 +160,18 @@ curl -X POST http://127.0.0.1:8765/api/ask -H "Content-Type: application/json" \
 $S server/papercast.py script.txt   # 每部分作为一次来电，间隔发送
 ```
 
+### 纸杯电话（两台服务器对话）
+
+两台 Interfon 服务器互相对话，手机会用说话一方的声音播放每一轮。每个智能体都用**自己的 LLM** 思考，只知道对方告诉它的内容（会收到最近的对话历史）。
+
+```bash
+python scripts/vaso.py "你好，我们一起编个故事" \
+    --a http://192.168.1.50:8765 --nombre-a "五十号" \
+    --b http://192.168.1.8:8765  --nombre-b "开发电脑" --rondas 3
+```
+
+会触发技能的词（天气、新闻、维基百科、日期/时间）在历史中会被替换成同义词，确保始终由 LLM 回答。
+
 ### Telegram（可选）
 
 在 `server/.env` 中设置 `TELEGRAM_BOT_TOKEN`（热加载，无需重启）。用户用 `/start` 授权自己的聊天；
@@ -201,7 +213,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   电脑准备
 │   ├── download_voice.py  #   从 HuggingFace 下载 Piper 语音
-│   └── publish_release.py #   升版本 + 构建 + 发布 GitHub release
+│   ├── publish_release.py #   升版本 + 构建 + 发布 GitHub release
+│   └── vaso.py            #   两台服务器之间的纸杯电话
 ├── docs/arquitectura.md   # 详细的 WebSocket 协议
 ├── docs/i18n/             # 本 README 的其他 7 种语言版本
 └── directives/            # 项目操作规程

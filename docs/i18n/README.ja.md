@@ -168,6 +168,18 @@ curl -X POST http://127.0.0.1:8765/api/ask -H "Content-Type: application/json" \
 $S server/papercast.py script.txt   # 各パートが間隔を空けて着信として届く
 ```
 
+### 糸電話（2 台のサーバーが会話）
+
+2 台の Interfon サーバーが互いに会話し、スマホは話している側の声で各ターンを再生します。各エージェントは**自分の LLM** で考え、相手から聞いたことしか知りません（最近の会話履歴を受け取ります）。
+
+```bash
+python scripts/vaso.py "こんにちは、一緒にお話を作ろう" \
+    --a http://192.168.1.50:8765 --nombre-a "50 番" \
+    --b http://192.168.1.8:8765  --nombre-b "開発用 PC" --rondas 3
+```
+
+スキルを起動する言葉（天気、ニュース、Wikipedia、日付/時刻）は履歴内で同義語に置き換えられ、常に LLM が答えます。
+
 ### Telegram（任意）
 
 `server/.env` の `TELEGRAM_BOT_TOKEN`（実行中に検出、再起動不要）。ユーザーは `/start` でチャットを
@@ -209,7 +221,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   PC の準備
 │   ├── download_voice.py  #   HuggingFace の Piper 音声
-│   └── publish_release.py #   バージョン更新 + ビルド + GitHub release
+│   ├── publish_release.py #   バージョン更新 + ビルド + GitHub release
+│   └── vaso.py            #   2 台のサーバー間の糸電話
 ├── docs/arquitectura.md   # WebSocket プロトコルの詳細
 ├── docs/i18n/             # この README の他 7 言語版
 └── directives/            # プロジェクトの運用手順

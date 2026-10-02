@@ -172,6 +172,18 @@ Colombian holidays (and the LLM for everything else).
 $S server/papercast.py script.txt   # each part arrives as a call, spaced out
 ```
 
+### Tin-can telephone (two servers talk)
+
+Two Interfon servers talk to each other and the phone hears every turn in the voice of whoever speaks. Each agent thinks with **its own LLM** and only knows what the other told it (it gets the recent conversation history).
+
+```bash
+python scripts/vaso.py "Hi, let's make up a story together" \
+    --a http://192.168.1.50:8765 --nombre-a "the fifty" \
+    --b http://192.168.1.8:8765  --nombre-b "the dev PC" --rondas 3
+```
+
+Words that trigger skills (weather, news, Wikipedia, date/time) are replaced with synonyms in the history so the LLM always answers.
+
 ### Telegram (optional)
 
 `TELEGRAM_BOT_TOKEN` in `server/.env` (hot-detected, no restart). The user authorizes their
@@ -215,7 +227,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   PC setup
 │   ├── download_voice.py  #   Piper voices from HuggingFace
-│   └── publish_release.py #   bump + build + GitHub release
+│   ├── publish_release.py #   bump + build + GitHub release
+│   └── vaso.py            #   tin-can telephone between two servers
 ├── docs/arquitectura.md   # detailed WebSocket protocol
 ├── docs/i18n/             # this README in 7 more languages
 └── directives/            # project operating procedure

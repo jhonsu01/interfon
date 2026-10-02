@@ -173,6 +173,18 @@ internet/Wikipédia, jours fériés de Colombie (et le LLM pour le reste).
 $S server/papercast.py script.txt   # chaque partie arrive comme un appel, espacée
 ```
 
+### Téléphone à gobelets (deux serveurs discutent)
+
+Deux serveurs Interfon discutent entre eux et le téléphone entend chaque tour avec la voix de celui qui parle. Chaque agent réfléchit avec **son propre LLM** et ne sait que ce que l’autre lui a dit (il reçoit l’historique récent de la conversation).
+
+```bash
+python scripts/vaso.py "Salut, inventons une histoire ensemble" \
+    --a http://192.168.1.50:8765 --nombre-a "le cinquante" \
+    --b http://192.168.1.8:8765  --nombre-b "le PC de dev" --rondas 3
+```
+
+Les mots qui déclenchent des compétences (météo, actualités, Wikipédia, date/heure) sont remplacés par des synonymes dans l’historique pour que le LLM réponde toujours.
+
 ### Telegram (facultatif)
 
 `TELEGRAM_BOT_TOKEN` dans `server/.env` (détection à chaud, sans redémarrage). L’utilisateur
@@ -216,7 +228,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   préparation du PC
 │   ├── download_voice.py  #   voix Piper depuis HuggingFace
-│   └── publish_release.py #   montée de version + build + release GitHub
+│   ├── publish_release.py #   montée de version + build + release GitHub
+│   └── vaso.py            #   téléphone à gobelets entre deux serveurs
 ├── docs/arquitectura.md   # protocole WebSocket détaillé
 ├── docs/i18n/             # ce README dans 7 autres langues
 └── directives/            # procédure d’exploitation du projet

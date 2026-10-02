@@ -172,6 +172,18 @@ internet/Wikipédia, feriados da Colômbia (e o LLM para o resto).
 $S server/papercast.py roteiro.txt   # cada parte chega como chamada, espaçada
 ```
 
+### Telefone de copos (dois servidores conversam)
+
+Dois servidores Interfon conversam entre si e o celular ouve cada turno com a voz de quem fala. Cada agente pensa com **o seu próprio LLM** e só sabe o que o outro lhe disse (recebe o histórico recente da conversa).
+
+```bash
+python scripts/vaso.py "Olá, vamos inventar uma história juntos" \
+    --a http://192.168.1.50:8765 --nombre-a "o cinquenta" \
+    --b http://192.168.1.8:8765  --nombre-b "o PC de desenvolvimento" --rondas 3
+```
+
+Palavras que ativam habilidades (clima, notícias, Wikipédia, data/hora) são trocadas por sinônimos no histórico para que sempre responda o LLM.
+
 ### Telegram (opcional)
 
 `TELEGRAM_BOT_TOKEN` em `server/.env` (detecção a quente, sem reiniciar). O usuário autoriza o
@@ -215,7 +227,8 @@ Interfon/
 ├── scripts/
 │   ├── setup_server.ps1   #   preparação do PC
 │   ├── download_voice.py  #   vozes Piper do HuggingFace
-│   └── publish_release.py #   bump + build + release no GitHub
+│   ├── publish_release.py #   bump + build + release no GitHub
+│   └── vaso.py            #   telefone de copos entre dois servidores
 ├── docs/arquitectura.md   # protocolo WebSocket detalhado
 ├── docs/i18n/             # este README em mais 7 idiomas
 └── directives/            # procedimento de operação do projeto
