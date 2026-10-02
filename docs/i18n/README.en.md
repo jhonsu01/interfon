@@ -186,7 +186,7 @@ Words that trigger skills (weather, news, Wikipedia, date/time) are replaced wit
 
 ### Telegram (optional)
 
-`TELEGRAM_BOT_TOKEN` in `server/.env` (hot-detected, no restart). The user authorizes their
+`TELEGRAM_BOT_TOKEN` in `.secrets/.env` (+ `TELEGRAM_BOT_NAME`; o `server/.env`) (hot-detected, no restart). The user authorizes their
 chat with `/start`; the bot answers with the same skills. To message them from the PC:
 `$S server/telegram_send.py "text"`.
 

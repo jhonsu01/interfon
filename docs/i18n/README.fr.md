@@ -187,7 +187,7 @@ Les mots qui déclenchent des compétences (météo, actualités, Wikipédia, da
 
 ### Telegram (facultatif)
 
-`TELEGRAM_BOT_TOKEN` dans `server/.env` (détection à chaud, sans redémarrage). L’utilisateur
+`TELEGRAM_BOT_TOKEN` dans `.secrets/.env` (+ `TELEGRAM_BOT_NAME`; o `server/.env`) (détection à chaud, sans redémarrage). L’utilisateur
 autorise sa conversation avec `/start` ; le bot répond avec les mêmes compétences. Pour lui écrire
 depuis le PC : `$S server/telegram_send.py "texte"`.
 

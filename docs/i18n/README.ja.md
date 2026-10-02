@@ -182,7 +182,7 @@ python scripts/vaso.py "こんにちは、一緒にお話を作ろう" \
 
 ### Telegram（任意）
 
-`server/.env` の `TELEGRAM_BOT_TOKEN`（実行中に検出、再起動不要）。ユーザーは `/start` でチャットを
+`.secrets/.env`（+ `TELEGRAM_BOT_NAME`、または `server/.env`） の `TELEGRAM_BOT_TOKEN`（実行中に検出、再起動不要）。ユーザーは `/start` でチャットを
 承認し、ボットは同じ機能で返答します。PC からメッセージを送るには: `$S server/telegram_send.py "テキスト"`。
 
 ### 運用ルール

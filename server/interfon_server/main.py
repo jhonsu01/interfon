@@ -73,13 +73,17 @@ async def _startup_tasks() -> None:
 
 async def _telegram_watchdog() -> None:
     import pathlib
-    env = pathlib.Path(__file__).resolve().parent.parent / ".env"
+    server_dir = pathlib.Path(__file__).resolve().parent.parent
+    envs = (server_dir.parent / ".secrets" / ".env", server_dir / ".env")
 
     def read_token() -> str:
-        if not env.exists():
-            return ""
-        m = re.search(r"^TELEGRAM_BOT_TOKEN=(.+)$", env.read_text(encoding="utf-8-sig"), re.M)
-        return m.group(1).strip() if m else ""
+        for env in envs:
+            if env.exists():
+                m = re.search(r"^TELEGRAM_BOT_TOKEN=(.+)$",
+                              env.read_text(encoding="utf-8-sig"), re.M)
+                if m and m.group(1).strip():
+                    return m.group(1).strip()
+        return ""
 
     started = False
     while True:
@@ -88,7 +92,7 @@ async def _telegram_watchdog() -> None:
             started = True
             log.info("TELEGRAM_BOT_TOKEN detectado: arrancando puente...")
             import sys
-            sys.path.insert(0, str(env.parent))
+            sys.path.insert(0, str(server_dir))
             from telegram_bridge import run_bridge
             try:
                 await run_in_threadpool(run_bridge, token)

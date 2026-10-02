@@ -186,7 +186,7 @@ Palavras que ativam habilidades (clima, notícias, Wikipédia, data/hora) são t
 
 ### Telegram (opcional)
 
-`TELEGRAM_BOT_TOKEN` em `server/.env` (detecção a quente, sem reiniciar). O usuário autoriza o
+`TELEGRAM_BOT_TOKEN` em `.secrets/.env` (+ `TELEGRAM_BOT_NAME`; o `server/.env`) (detecção a quente, sem reiniciar). O usuário autoriza o
 chat com `/start`; o bot responde com as mesmas habilidades. Para escrever do PC:
 `$S server/telegram_send.py "texto"`.
 

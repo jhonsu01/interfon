@@ -174,7 +174,7 @@ python scripts/vaso.py "你好，我们一起编个故事" \
 
 ### Telegram（可选）
 
-在 `server/.env` 中设置 `TELEGRAM_BOT_TOKEN`（热加载，无需重启）。用户用 `/start` 授权自己的聊天；
+在 `.secrets/.env`（+ `TELEGRAM_BOT_NAME`；或 `server/.env`） 中设置 `TELEGRAM_BOT_TOKEN`（热加载，无需重启）。用户用 `/start` 授权自己的聊天；
 机器人具备相同能力。要从电脑给用户发消息：`$S server/telegram_send.py "文本"`。
 
 ### 运行规则

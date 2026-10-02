@@ -185,7 +185,7 @@ python scripts/vaso.py "Привет, давай вместе придумаем
 
 ### Telegram (необязательно)
 
-`TELEGRAM_BOT_TOKEN` в `server/.env` (подхватывается на лету, без перезапуска). Пользователь
+`TELEGRAM_BOT_TOKEN` в `.secrets/.env` (+ `TELEGRAM_BOT_NAME`; o `server/.env`) (подхватывается на лету, без перезапуска). Пользователь
 авторизует свой чат командой `/start`; бот отвечает с теми же навыками. Написать ему с ПК:
 `$S server/telegram_send.py "текст"`.
 

@@ -6,7 +6,8 @@
 - Con TELEGRAM_MIRROR_PHONE=true ademas envia la respuesta como audio
   al telefono (usa la TTS del servidor).
 
-Requiere TELEGRAM_BOT_TOKEN en server/.env (crea el bot con @BotFather).
+Requiere TELEGRAM_BOT_TOKEN en .secrets/.env o server/.env (crea el bot con @BotFather).
+TELEGRAM_BOT_NAME (opcional) es el @usuario del bot: se verifica contra el token.
 El primer chat que envie /start queda autorizado (se guarda el chat_id).
 """
 import pathlib
@@ -21,12 +22,18 @@ LOCK_FILE = SERVER_DIR / ".telegram_chat_id"
 INTERFON = "http://127.0.0.1:8765"
 
 
+# Se busca primero en .secrets/.env (fuera del repo) y luego en server/.env
+ENV_FILES = (SERVER_DIR.parent / ".secrets" / ".env", SERVER_DIR / ".env")
+
+
 def read_env_value(key: str) -> str:
-    env = SERVER_DIR / ".env"
-    if not env.exists():
-        return ""
-    m = re.search(rf"^{key}=(.*)$", env.read_text(encoding="utf-8-sig"), re.M)
-    return m.group(1).strip() if m else ""
+    for env in ENV_FILES:
+        if not env.exists():
+            continue
+        m = re.search(rf"^{key}=(.*)$", env.read_text(encoding="utf-8-sig"), re.M)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+    return ""
 
 
 def tg_api(token: str) -> str:
@@ -52,6 +59,10 @@ def run_bridge(token: str) -> None:
     api = tg_api(token)
     me = requests.get(api + "/getMe", timeout=15).json()["result"]
     print(f"[telegram] Puente activo como @{me.get('username')}")
+    esperado = read_env_value("TELEGRAM_BOT_NAME").lstrip("@")
+    if esperado and esperado.lower() != (me.get("username") or "").lower():
+        print(f"[telegram] AVISO: TELEGRAM_BOT_NAME=@{esperado} pero el token es de "
+              f"@{me.get('username')}; revisa .secrets/.env")
 
     chat_id: int | None = None
     if LOCK_FILE.exists():

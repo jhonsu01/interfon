@@ -19,7 +19,7 @@ def main() -> int:
         return 2
     token = read_env_value("TELEGRAM_BOT_TOKEN")
     if not token:
-        print("Falta TELEGRAM_BOT_TOKEN en server/.env (crea el bot con @BotFather).")
+        print("Falta TELEGRAM_BOT_TOKEN en .secrets/.env (crea el bot con @BotFather).")
         return 1
     if not LOCK_FILE.exists():
         print("Nadie ha enviado /start al bot todavia (no hay chat autorizado).")

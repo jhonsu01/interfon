@@ -180,7 +180,7 @@ python scripts/vaso.py "안녕, 같이 이야기를 지어 보자" \
 
 ### Telegram (선택)
 
-`server/.env`의 `TELEGRAM_BOT_TOKEN` (실행 중 감지, 재시작 불필요). 사용자는 `/start`로 채팅을
+`.secrets/.env`(+ `TELEGRAM_BOT_NAME`, 또는 `server/.env`)의 `TELEGRAM_BOT_TOKEN` (실행 중 감지, 재시작 불필요). 사용자는 `/start`로 채팅을
 승인하고, 봇은 같은 기능으로 답합니다. PC에서 메시지 보내기: `$S server/telegram_send.py "텍스트"`.
 
 ### 운영 규칙

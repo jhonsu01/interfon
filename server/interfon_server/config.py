@@ -18,6 +18,8 @@ def _load_env(path: pathlib.Path) -> None:
         os.environ.setdefault(key.strip(), val.strip())
 
 
+# Secretos (token del bot, etc.) primero: .secrets/ nunca se sube al repo
+_load_env(PROJECT_DIR / ".secrets" / ".env")
 _load_env(SERVER_DIR / ".env")
 
 
