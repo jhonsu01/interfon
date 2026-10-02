@@ -42,6 +42,7 @@
 | 🗣️ Voz del agente | **Piper `es_AR-daniela-high`** (femenina argentina) con respaldo SAPI (Sabina es-MX). Otras voces: `python scripts/download_voice.py --list`. |
 | 🌓 Modo oscuro | Forzado, Material 3, tema verde sobre negro azulado. |
 | ✍️ Transcripción | Todo lo dicho (por ambos) aparece en pantalla y se registra en `server/logs/`. |
+| 📡 Auto-descubrimiento | La app escanea la red local y encuentra el servidor sola (sin configurar IP). |
 
 ## Puesta en marcha
 
@@ -66,11 +67,14 @@ Instala el APK de la última [release](../../releases) (`Interfon-vX.Y.Z.apk`, f
 Al abrirla:
 
 1. Concede micrófono y notificaciones.
-2. Ve a **Ajustes** y pon la IP del PC (el setup la imprime, p. ej. `http://192.168.1.50:8765`).
+2. **Nada más**: la app descubre el servidor sola (escanea la red local, valida
+   `/api/status` y conecta). Si la IP del PC cambia, lo re-encuentra automáticamente.
+   También puedes forzarlo con el botón **🔎 Buscar servidor en la red**.
 3. El indicador debe pasar a **Conectado al servidor**.
 
-> Con USB también puedes usar `adb reverse tcp:8765 tcp:8765` y dejar la IP
-> `http://127.0.0.1:8765`.
+> Si prefieres fijar la IP a mano: **Ajustes** → URL `http://<IP-PC>:8765` →
+> "Guardar y reconectar". Con USB también sirve `adb reverse tcp:8765 tcp:8765`
+> y la URL `http://127.0.0.1:8765`.
 
 ### 3. Hablar
 
