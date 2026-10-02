@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +70,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jhonsu.interfon.ui.InterfonTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -398,11 +401,15 @@ private fun SettingsScreen(onBack: () -> Unit) {
         }.getOrNull() ?: "?"
     }
 
+    val pickerScope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            if (!Contact.save(ctx, uri)) {
-                Bus.events.tryEmit("No se pudo cargar la foto")
+            pickerScope.launch(Dispatchers.IO) {
+                val (ok, motivo) = Contact.save(ctx, uri)
+                if (!ok) {
+                    Bus.events.tryEmit("No se pudo cargar la foto: $motivo")
+                }
             }
         }
     }

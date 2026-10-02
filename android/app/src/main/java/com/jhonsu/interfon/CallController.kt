@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
@@ -12,6 +14,7 @@ import java.io.ByteArrayOutputStream
 object CallController {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val playMutex = Mutex()
 
     private var ws: WsClient? = null
     private var onPushMessage: ((String) -> Unit)? = null
@@ -199,7 +202,8 @@ object CallController {
         val voice = kind != "message"
         scope.launch {
             try {
-                AudioEngine.playWav(data, voice)
+                // Cola: varios audios seguidos (p. ej. podcast) se reproducen en orden
+                playMutex.withLock { AudioEngine.playWav(data, voice) }
             } finally {
                 Bus.playing.value = false
             }
