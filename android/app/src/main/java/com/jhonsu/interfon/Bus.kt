@@ -28,6 +28,10 @@ object Bus {
     val playing = MutableStateFlow(false)
     val walkieBusy = MutableStateFlow(false)
 
+    /** Niveles de voz 0..1 para la animacion del orbe (envolvente real del audio). */
+    val voiceLevel = MutableStateFlow(0f)   // voz del agente (reproduccion)
+    val micLevel = MutableStateFlow(0f)     // voz del usuario (grabacion)
+
     /** Ruta de audio: false = auricular (llamada normal), true = altavoz. */
     val speaker = MutableStateFlow(false)
 

@@ -71,6 +71,7 @@ object CallController {
         walkieBuffer.reset()
         beginAudioSession()
         val started = AudioEngine.startRecording { chunk ->
+            Bus.micLevel.value = AudioEngine.rmsLevel(chunk)
             if (walkieRecording) synchronized(walkieBuffer) { walkieBuffer.write(chunk) }
         }
         if (started) walkieRecording = true
@@ -81,6 +82,7 @@ object CallController {
         if (!walkieRecording) return
         walkieRecording = false
         AudioEngine.stopRecording()
+        Bus.micLevel.value = 0f
         val pcm = synchronized(walkieBuffer) { walkieBuffer.toByteArray() }
         if (pcm.size < 6400) { // < 0.2s: descartar toque accidental
             Bus.events.tryEmit("Clip demasiado corto")
@@ -126,6 +128,7 @@ object CallController {
         if (micStarted) return
         beginAudioSession()
         val ok = AudioEngine.startRecording { chunk ->
+            Bus.micLevel.value = AudioEngine.rmsLevel(chunk)
             // Half-duplex: enviar solo mientras el servidor escucha y no reproducimos
             if (Bus.callActive.value && Bus.callState.value == "listening" &&
                 !Bus.playing.value) {
@@ -138,6 +141,7 @@ object CallController {
 
     private fun stopMic() {
         AudioEngine.stopRecording()
+        Bus.micLevel.value = 0f
         micStarted = false
         endAudioSession()
     }

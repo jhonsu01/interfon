@@ -240,7 +240,16 @@ private fun CallScreen() {
     val playing by Bus.playing.collectAsStateWithLifecycle()
     val speaker by Bus.speaker.collectAsStateWithLifecycle()
     val agentName by Bus.agentName.collectAsStateWithLifecycle()
+    val voiceLevel by Bus.voiceLevel.collectAsStateWithLifecycle()
+    val micLevel by Bus.micLevel.collectAsStateWithLifecycle()
     val seconds by produceState(0) { while (true) { delay(1000); value++ } }
+
+    val orbMode = when {
+        playing -> com.jhonsu.interfon.ui.OrbMode.SPEAKING
+        state == "thinking" -> com.jhonsu.interfon.ui.OrbMode.THINKING
+        else -> com.jhonsu.interfon.ui.OrbMode.LISTENING
+    }
+    val orbLevel = if (playing) voiceLevel else micLevel
 
     Column(
         modifier = Modifier
@@ -250,7 +259,13 @@ private fun CallScreen() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(28.dp))
-        AgentAvatar(96.dp)
+        Box(contentAlignment = Alignment.Center) {
+            com.jhonsu.interfon.ui.VoiceOrb(
+                mode = orbMode, level = orbLevel,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(190.dp))
+            AgentAvatar(96.dp)
+        }
         Spacer(Modifier.height(14.dp))
         Text(agentName, fontSize = 26.sp, fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground)
@@ -303,7 +318,18 @@ private fun CallScreen() {
 private fun WalkieScreen(onBack: () -> Unit) {
     val busy by Bus.walkieBusy.collectAsStateWithLifecycle()
     val speaker by Bus.speaker.collectAsStateWithLifecycle()
+    val playing by Bus.playing.collectAsStateWithLifecycle()
+    val voiceLevel by Bus.voiceLevel.collectAsStateWithLifecycle()
+    val micLevel by Bus.micLevel.collectAsStateWithLifecycle()
     var pressed by remember { mutableStateOf(false) }
+
+    val orbMode = when {
+        playing -> com.jhonsu.interfon.ui.OrbMode.SPEAKING
+        busy -> com.jhonsu.interfon.ui.OrbMode.THINKING
+        pressed -> com.jhonsu.interfon.ui.OrbMode.LISTENING
+        else -> com.jhonsu.interfon.ui.OrbMode.IDLE
+    }
+    val orbLevel = if (playing) voiceLevel else micLevel
 
     Column(
         modifier = Modifier
@@ -350,6 +376,10 @@ private fun WalkieScreen(onBack: () -> Unit) {
                 },
             contentAlignment = Alignment.Center,
         ) {
+            com.jhonsu.interfon.ui.VoiceOrb(
+                mode = orbMode, level = orbLevel,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(210.dp))
             Box(
                 Modifier
                     .size(if (pressed) 210.dp else 190.dp)

@@ -68,6 +68,42 @@ object AudioEngine {
         audioRecord = null
     }
 
+    /** RMS normalizado 0..1 de un chunk PCM16 (para animaciones de voz). */
+    fun rmsLevel(chunk: ByteArray): Float {
+        var sum = 0.0
+        var n = 0
+        for (i in 0 until chunk.size - 1 step 2) {
+            val v = (chunk[i].toInt() and 0xFF or (chunk[i + 1].toInt() shl 8)).toShort().toInt()
+            sum += v.toDouble() * v
+            n++
+        }
+        if (n == 0) return 0f
+        return (kotlin.math.sqrt(sum / n) / 9000.0).toFloat().coerceIn(0f, 1f)
+    }
+
+    /** Envolvente de amplitud por ventana de 100ms, normalizada 0.15..1 (voz del agente). */
+    fun pcmEnvelope(pcm: ByteArray, rate: Int, winMs: Int = 100): FloatArray {
+        val win = maxOf(1, rate * winMs / 1000)
+        val n = maxOf(1, pcm.size / 2 / win)
+        val out = FloatArray(n)
+        var max = 1f
+        for (i in 0 until n) {
+            var sum = 0.0
+            val base = i * win
+            for (j in 0 until win) {
+                val off = (base + j) * 2
+                if (off + 1 >= pcm.size) break
+                val v = (pcm[off].toInt() and 0xFF or (pcm[off + 1].toInt() shl 8)).toShort().toInt()
+                sum += v.toDouble() * v
+            }
+            val rms = kotlin.math.sqrt(sum / win).toFloat()
+            out[i] = rms
+            if (rms > max) max = rms
+        }
+        for (i in out.indices) out[i] = (out[i] / max).coerceIn(0.15f, 1f)
+        return out
+    }
+
     /**
      * Reproduce un WAV PCM en memoria y bloquea hasta terminar.
      * voice=true enruta por el canal de comunicacion (auricular/altavoz segun
@@ -95,10 +131,18 @@ object AudioEngine {
             val written = track.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
             track.play()
             val totalFrames = written / 2
+            // Orbe: envolvente real del audio sincronizada con la posicion de reproduccion
+            val env = if (voice) pcmEnvelope(pcm, parsed.rate) else null
+            val framesPerWin = maxOf(1, parsed.rate / 10)
             while (track.playbackHeadPosition < totalFrames &&
                 track.state == AudioTrack.STATE_INITIALIZED) {
+                if (env != null) {
+                    val idx = (track.playbackHeadPosition / framesPerWin).toInt().coerceIn(0, env.size - 1)
+                    Bus.voiceLevel.value = env[idx]
+                }
                 Thread.sleep(60)
             }
+            Bus.voiceLevel.value = 0f
             track.release()
         }
     }
