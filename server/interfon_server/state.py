@@ -93,5 +93,8 @@ class State:
         line = json.dumps(rec, ensure_ascii=False)
         async with self._log_lock:
             path = CFG.logs_dir / f"transcripts-{datetime.now():%Y-%m-%d}.jsonl"
-            path.write_text(path.read_text() + line + "\n", encoding="utf-8") \
-                if path.exists() else path.write_text(line + "\n", encoding="utf-8")
+            # Agregar al final en UTF-8. Antes se releia el archivo entero con
+            # read_text() sin encoding (cp1252 en Windows) y cada evento volvia a
+            # corromper las tildes de todas las lineas anteriores.
+            with path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
