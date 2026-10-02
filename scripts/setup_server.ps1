@@ -35,7 +35,7 @@ if (-not (Test-Path $envFile)) {
 $voice = Join-Path $serverDir "voices\es_AR-daniela-high.onnx"
 if (-not (Test-Path $voice)) {
     Write-Host "Descargando voz argentina daniela (HuggingFace, ~114 MB)..."
-    & $py (Join-Path $PSScriptRoot "download_voice.py") daniela
+    & $py (Join-Path $PSScriptRoot "download_voice.py") --voice daniela
     if ($LASTEXITCODE -ne 0) { Write-Host "AVISO: no se pudo bajar la voz; se usara la voz SAPI de Windows." -ForegroundColor Yellow }
 }
 

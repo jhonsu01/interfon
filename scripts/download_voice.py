@@ -40,7 +40,9 @@ def list_spanish():
 
 
 def download(path: str):
-    name = path.split("/")[-1]
+    # es/es_AR/daniela/high -> es_AR-daniela-high (asi se llaman los archivos en el repo)
+    parts = path.strip("/").split("/")
+    name = "-".join(parts[1:]) if len(parts) == 4 else parts[-1]
     VOICES.mkdir(parents=True, exist_ok=True)
     for ext in (".onnx", ".onnx.json"):
         url = f"{DL}/{path}/{name}{ext}"
