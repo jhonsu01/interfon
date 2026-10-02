@@ -88,7 +88,7 @@ private fun AppRoot() {
     // servicio para que promote el tipo FGS microphone.
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if (grants.values.any { it }) ConnectionService.start(ctx)
+        if (grants.values.any { it }) ConnectionService.restart(ctx)
     }
     LaunchedEffect(Unit) {
         ConnectionService.start(ctx)
@@ -130,6 +130,7 @@ private fun AppRoot() {
 
 @Composable
 private fun HomeScreen(onCall: () -> Unit, onWalkie: () -> Unit, onSettings: () -> Unit) {
+    val ctx = LocalContext.current
     val conn by Bus.connection.collectAsStateWithLifecycle()
     val url by Bus.serverUrl.collectAsStateWithLifecycle()
 
@@ -179,6 +180,14 @@ private fun HomeScreen(onCall: () -> Unit, onWalkie: () -> Unit, onSettings: () 
         }
 
         Spacer(Modifier.height(28.dp))
+
+        if (conn == Bus.Conn.DISCONNECTED) {
+            TextButton(
+                onClick = { ConnectionService.discover(ctx) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("🔎 Buscar servidor en la red") }
+            Spacer(Modifier.height(10.dp))
+        }
 
         Button(
             onClick = onCall,
@@ -391,10 +400,19 @@ private fun SettingsScreen(onBack: () -> Unit) {
             onClick = {
                 Prefs.setUrl(ctx, url)
                 Bus.events.tryEmit("Guardado. Reconectando…")
-                ConnectionService.start(ctx) // el servicio ya corre; re-arrancar reconecta
+                ConnectionService.restart(ctx)
             },
             modifier = Modifier.fillMaxWidth().height(54.dp),
         ) { Text("Guardar y reconectar") }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                Bus.events.tryEmit("Buscando servidor en la red…")
+                ConnectionService.discover(ctx)
+            },
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+        ) { Text("🔎 Buscar servidor en la red") }
 
         Spacer(Modifier.height(24.dp))
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

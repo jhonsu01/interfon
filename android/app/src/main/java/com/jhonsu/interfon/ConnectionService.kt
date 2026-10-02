@@ -9,18 +9,32 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
-/** Servicio en primer plano: mantiene el WebSocket vivo para recibir llamadas. */
+/**
+ * Servicio en primer plano: mantiene la conexion con el servidor Interfon.
+ *
+ * Ciclo gestionado: intenta la URL guardada; si falla repetidamente, escanea
+ * la red local en busca del servidor (ServerDiscovery) y actualiza la URL.
+ */
 class ConnectionService : Service() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var ws: WsClient? = null
+    private var loopJob: Job? = null
+    private var collectorJob: Job? = null
+
+    @Volatile private var discoverOnNext = false
+    @Volatile private var lastDiscoveryAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -31,31 +45,114 @@ class ConnectionService : Service() {
             return START_NOT_STICKY
         }
         startAsForeground(getString(R.string.notif_service_text))
-        if (ws == null) connect()
+        when (intent?.action) {
+            ACTION_DISCOVER -> {
+                discoverOnNext = true
+                restartLoop()
+            }
+            ACTION_RECONNECT -> restartLoop()
+            else -> if (loopJob == null) startLoop()
+        }
         return START_STICKY
     }
 
-    private fun connect() {
-        Bus.serverUrl.value = Prefs.url(this)
-        ws = WsClient(
-            httpUrl = Prefs.url(this),
+    // ---------- ciclo de conexion ----------
+
+    private fun startLoop() {
+        ensureCollector()
+        loopJob = scope.launch { connectionLoop() }
+    }
+
+    private fun restartLoop() {
+        loopJob?.cancel()
+        ws?.close()
+        startLoop()
+    }
+
+    private suspend fun connectionLoop() {
+        var failures = 0
+        // La cancelacion del scope corta el bucle en delay()/await()
+        while (true) {
+            if (discoverOnNext) {
+                discoverOnNext = false
+                tryDiscover()
+            }
+            val url = Prefs.url(this@ConnectionService)
+            Bus.serverUrl.value = url
+            val connected = connectOnce(url)
+            failures = if (connected) 0 else failures + 1
+            if (!connected) {
+                // Auto-descubrimiento: maximo una vez cada 15 s
+                val now = System.currentTimeMillis()
+                if (now - lastDiscoveryAt > 15000) {
+                    tryDiscover()
+                }
+            }
+            delay(when {
+                connected -> 400
+                failures > 6 -> 8000
+                else -> 2500
+            })
+        }
+    }
+
+    /** Escanea la red; si encuentra el servidor, lo guarda como URL activa. */
+    private suspend fun tryDiscover(): Boolean {
+        lastDiscoveryAt = System.currentTimeMillis()
+        Bus.connection.value = Bus.Conn.CONNECTING
+        Bus.serverUrl.value = "buscando servidor en la red…"
+        val found = ServerDiscovery.discover()
+        return if (found != null) {
+            Prefs.setUrl(this, found)
+            Bus.serverUrl.value = found
+            true
+        } else {
+            false
+        }
+    }
+
+    /** Conecta a la URL y suspende hasta que la conexion caiga. */
+    private suspend fun connectOnce(url: String): Boolean {
+        Bus.connection.value = Bus.Conn.CONNECTING
+        Bus.serverUrl.value = url
+        val initial = CompletableDeferred<Boolean>()
+        val ended = CompletableDeferred<Unit>()
+        val client = WsClient(
+            httpUrl = url,
             onJson = { CallController.onJson(it) },
             onBinary = { CallController.onBinary(it) },
             onConn = { ok ->
                 Bus.connection.value = if (ok) Bus.Conn.CONNECTED else Bus.Conn.DISCONNECTED
+                if (!ok) ended.complete(Unit)
             },
-        ).also { client ->
-            CallController.attach(client)
-            client.connect()
-        }
+            autoRetry = false,
+            onInitial = { ok -> initial.complete(ok) },
+        )
+        ws = client
+        CallController.attach(client)
+        client.connect()
 
-        scope.launch {
+        val ok = withTimeoutOrNull(10000) { initial.await() } == true
+        if (!ok) {
+            client.close()
+            Bus.connection.value = Bus.Conn.DISCONNECTED
+            return false
+        }
+        ended.await() // mantener hasta que se pierda la conexion
+        return true
+    }
+
+    private fun ensureCollector() {
+        if (collectorJob != null) return
+        collectorJob = scope.launch {
             Bus.incoming.collectLatest { call ->
                 if (call != null) showCallNotification(call)
                 else dismissCallNotification()
             }
         }
     }
+
+    // ---------- notificaciones / foreground ----------
 
     /** Tipos FGS segun permisos: microphone exige RECORD_AUDIO concedido (Android 14+). */
     private fun fgsTypes(): Int {
@@ -86,7 +183,6 @@ class ConnectionService : Service() {
         try {
             ServiceCompat.startForeground(this, InterfonApp.NOTIF_SERVICE_ID, notif, fgsTypes())
         } catch (e: Exception) {
-            // Ultimo recurso: iniciar solo como connectedDevice (nunca microfono sin permiso)
             runCatching {
                 ServiceCompat.startForeground(
                     this, InterfonApp.NOTIF_SERVICE_ID, notif,
@@ -134,9 +230,24 @@ class ConnectionService : Service() {
 
     companion object {
         const val ACTION_STOP = "stop"
+        const val ACTION_RECONNECT = "reconnect"
+        const val ACTION_DISCOVER = "discover"
+
+        private fun intent(ctx: Context, action: String? = null): Intent =
+            Intent(ctx, ConnectionService::class.java).apply { action?.let { setAction(it) } }
 
         fun start(ctx: Context) {
-            ctx.startForegroundService(Intent(ctx, ConnectionService::class.java))
+            ctx.startForegroundService(intent(ctx))
+        }
+
+        /** Reconectar con la URL guardada (tras guardar cambios en Ajustes). */
+        fun restart(ctx: Context) {
+            ctx.startForegroundService(intent(ctx, ACTION_RECONNECT))
+        }
+
+        /** Buscar el servidor en la red y conectar al que aparezca. */
+        fun discover(ctx: Context) {
+            ctx.startForegroundService(intent(ctx, ACTION_DISCOVER))
         }
     }
 }

@@ -13,12 +13,20 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/** Cliente WebSocket contra el servidor Interfon, con reconexion automatica. */
+/**
+ * Cliente WebSocket contra el servidor Interfon.
+ *
+ * autoRetry=true: se reconecta solo (uso directo).
+ * autoRetry=false: el ConnectionService gestiona el ciclo de reconexion y
+ * descubrimiento; este cliente solo informa (onInitial/onConn).
+ */
 class WsClient(
     private val httpUrl: String,
     private val onJson: (JSONObject) -> Unit,
     private val onBinary: (ByteArray) -> Unit,
     private val onConn: (Boolean) -> Unit,
+    private val autoRetry: Boolean = true,
+    private val onInitial: (Boolean) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client = OkHttpClient.Builder()
@@ -29,6 +37,7 @@ class WsClient(
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var closedByUser = false
     @Volatile private var attempts = 0
+    @Volatile private var initialReported = false
 
     fun connect() {
         closedByUser = false
@@ -40,6 +49,7 @@ class WsClient(
         webSocket = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
                 attempts = 0
+                reportInitial(true)
                 onConn(true)
                 ws.send(JSONObject().put("type", "hello")
                     .put("app", "interfon").put("device", android.os.Build.MODEL).toString())
@@ -54,15 +64,24 @@ class WsClient(
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                reportInitial(false)
                 onConn(false)
-                scheduleReconnect()
+                if (autoRetry) scheduleReconnect()
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                reportInitial(false)
                 onConn(false)
-                if (!closedByUser) scheduleReconnect()
+                if (autoRetry && !closedByUser) scheduleReconnect()
             }
         })
+    }
+
+    private fun reportInitial(ok: Boolean) {
+        if (!initialReported) {
+            initialReported = true
+            onInitial(ok)
+        }
     }
 
     private fun scheduleReconnect() {
@@ -82,6 +101,6 @@ class WsClient(
 
     fun close() {
         closedByUser = true
-        webSocket?.close(1000, "app cerrada")
+        webSocket?.close(1000, "reconexion")
     }
 }
