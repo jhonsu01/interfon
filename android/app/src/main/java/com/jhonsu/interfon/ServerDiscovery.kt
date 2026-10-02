@@ -21,8 +21,18 @@ import java.net.URL
 object ServerDiscovery {
 
     const val PORT = 8765
-    private const val CONNECT_TIMEOUT_MS = 900
-    private const val HTTP_TIMEOUT_MS = 1200
+    private const val CONNECT_TIMEOUT_MS = 500
+    private const val HTTP_TIMEOUT_MS = 1000
+
+    /**
+     * Subredes /24 domesticas tipicas, ademas de las propias del telefono.
+     * Cubre routers que reparten rangos distintos por interfaz (LAN vs WiFi).
+     */
+    private val SUBREDES_COMUNES = listOf(
+        "192.168.0", "192.168.1", "192.168.2", "192.168.8", "192.168.10",
+        "192.168.18", "192.168.31", "192.168.43", "192.168.77", "192.168.100",
+        "192.168.137", "192.168.178", "10.0.0", "10.0.1", "172.16.0",
+    )
 
     /** Prefijos /24 de las interfaces activas del telefono. */
     fun subredes(): List<String> {
@@ -60,14 +70,22 @@ object ServerDiscovery {
         if (body.contains("\"interfon\"")) url else null
     }.getOrNull()
 
-    /** Escanea la red y devuelve la URL del servidor (o null si no aparece). */
-    suspend fun discover(timeoutMs: Long = 9000): String? = withContext(Dispatchers.IO) {
+    /**
+     * Escanea la red y devuelve la URL del servidor (o null si no aparece).
+     * Recorre primero el /24 propio del telefono y luego las subredes comunes,
+     * deteniendose en cuanto encuentra un Interfon.
+     */
+    suspend fun discover(timeoutMs: Long = 45000): String? = withContext(Dispatchers.IO) {
         withTimeoutOrNull(timeoutMs) {
-            coroutineScope {
-                subredes().flatMap { sub ->
+            val orden = LinkedHashSet(subredes() + SUBREDES_COMUNES)
+            for (sub in orden) {
+                val found = coroutineScope {
                     (1..254).map { i -> async { esInterfon("$sub.$i") } }
-                }.awaitAll().firstOrNull { it != null }
+                        .awaitAll().firstOrNull { it != null }
+                }
+                if (found != null) return@withTimeoutOrNull found
             }
+            null
         }
     }
 }
