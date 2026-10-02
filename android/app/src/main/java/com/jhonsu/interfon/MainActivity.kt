@@ -69,7 +69,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ConnectionService.start(this)
         setContent {
             InterfonTheme { AppRoot() }
         }
@@ -85,10 +84,14 @@ private fun AppRoot() {
     val callActive by Bus.callActive.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.HOME) }
 
-    // Permisos al arrancar (mic + notificaciones)
+    // Permisos al arrancar (mic + notificaciones); al concederlos se reinicia el
+    // servicio para que promote el tipo FGS microphone.
     val permLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()) { }
+        ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.any { it }) ConnectionService.start(ctx)
+    }
     LaunchedEffect(Unit) {
+        ConnectionService.start(ctx)
         val wanted = buildList {
             add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)

@@ -57,6 +57,21 @@ class ConnectionService : Service() {
         }
     }
 
+    /** Tipos FGS segun permisos: microphone exige RECORD_AUDIO concedido (Android 14+). */
+    private fun fgsTypes(): Int {
+        var types = 0
+        if (Build.VERSION.SDK_INT >= 29) {
+            types = types or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        }
+        if (Build.VERSION.SDK_INT >= 30 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            types = types or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        return types
+    }
+
     private fun startAsForeground(text: String) {
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -68,12 +83,18 @@ class ConnectionService : Service() {
             .setOngoing(true)
             .setContentIntent(pi)
             .build()
-        ServiceCompat.startForeground(
-            this, InterfonApp.NOTIF_SERVICE_ID, notif,
-            if (Build.VERSION.SDK_INT >= 29)
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            else 0)
+        try {
+            ServiceCompat.startForeground(this, InterfonApp.NOTIF_SERVICE_ID, notif, fgsTypes())
+        } catch (e: Exception) {
+            // Ultimo recurso: iniciar solo como connectedDevice (nunca microfono sin permiso)
+            runCatching {
+                ServiceCompat.startForeground(
+                    this, InterfonApp.NOTIF_SERVICE_ID, notif,
+                    if (Build.VERSION.SDK_INT >= 29)
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                    else 0)
+            }
+        }
     }
 
     private fun showCallNotification(call: Bus.IncomingCall) {
