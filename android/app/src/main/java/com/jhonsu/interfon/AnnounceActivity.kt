@@ -27,6 +27,8 @@ class AnnounceActivity : ComponentActivity() {
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         }
+        // Mientras suena el anuncio, la pantalla no entra en reposo
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             InterfonTheme {
                 AnnounceScreen(onStop = { CallController.stopAnnouncement() })

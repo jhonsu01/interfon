@@ -55,6 +55,8 @@ class IncomingCallActivity : ComponentActivity() {
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         }
+        // Mientras timbra, la pantalla no entra en reposo
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val callId = intent.getStringExtra("call_id") ?: ""
         val from = intent.getStringExtra("from") ?: "Agente"

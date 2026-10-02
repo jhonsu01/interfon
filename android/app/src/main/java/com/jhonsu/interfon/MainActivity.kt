@@ -124,6 +124,10 @@ private fun AppRoot() {
 
     val announce by Bus.announce.collectAsStateWithLifecycle()
 
+    // Mientras habla el agente (o hay llamada/walkie activos) la pantalla no se apaga
+    KeepScreenOn(active = incoming != null || callActive || announce != null ||
+        screen == Screen.WALKIE)
+
     when {
         incoming != null -> IncomingOverlay(
             call = incoming!!,
@@ -592,6 +596,17 @@ private fun IncomingOverlay(call: Bus.IncomingCall, onAccept: () -> Unit, onDecl
             }
         }
     }
+}
+
+// ============================================================
+// Utilidades de UI
+// ============================================================
+
+/** Evita que la pantalla entre en reposo mientras active sea true. */
+@Composable
+private fun KeepScreenOn(active: Boolean) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    LaunchedEffect(active) { view.keepScreenOn = active }
 }
 
 // ============================================================
