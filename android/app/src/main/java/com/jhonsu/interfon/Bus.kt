@@ -28,6 +28,13 @@ object Bus {
     val playing = MutableStateFlow(false)
     val walkieBusy = MutableStateFlow(false)
 
+    /** Ruta de audio: false = auricular (llamada normal), true = altavoz. */
+    val speaker = MutableStateFlow(false)
+
+    /** Contacto del agente: nombre y foto personalizados por el usuario. */
+    val agentName = MutableStateFlow("ZCode")
+    val agentPhoto = MutableStateFlow<android.graphics.Bitmap?>(null)
+
     /** Avisos breves para la UI (toasts). */
     val events = MutableSharedFlow<String>(extraBufferCapacity = 16)
 

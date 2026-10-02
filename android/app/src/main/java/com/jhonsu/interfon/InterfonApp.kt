@@ -8,6 +8,10 @@ class InterfonApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        appContext = this
+        Bus.speaker.value = Prefs.speaker(this)
+        Bus.agentName.value = Prefs.agentName(this)
+        Bus.agentPhoto.value = Contact.load(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CH_SERVICE, getString(R.string.channel_service),
@@ -29,5 +33,8 @@ class InterfonApp : Application() {
         const val NOTIF_SERVICE_ID = 1
         const val NOTIF_CALL_ID = 2
         const val NOTIF_MESSAGE_ID = 3
+
+        lateinit var appContext: android.content.Context
+            private set
     }
 }

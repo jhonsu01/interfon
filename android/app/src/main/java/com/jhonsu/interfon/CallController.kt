@@ -65,6 +65,7 @@ object CallController {
     fun startWalkie(): Boolean {
         if (walkieRecording) return true
         walkieBuffer.reset()
+        beginAudioSession()
         val started = AudioEngine.startRecording { chunk ->
             if (walkieRecording) synchronized(walkieBuffer) { walkieBuffer.write(chunk) }
         }
@@ -79,6 +80,7 @@ object CallController {
         val pcm = synchronized(walkieBuffer) { walkieBuffer.toByteArray() }
         if (pcm.size < 6400) { // < 0.2s: descartar toque accidental
             Bus.events.tryEmit("Clip demasiado corto")
+            endAudioSession()
             return
         }
         Bus.walkieBusy.value = true
@@ -90,8 +92,27 @@ object CallController {
 
     @Volatile private var micStarted = false
 
+    /** Alterna auricular (llamada normal) / altavoz. */
+    fun setSpeaker(on: Boolean) {
+        Bus.speaker.value = on
+        val ctx = InterfonApp.appContext
+        Prefs.setSpeaker(ctx, on)
+        CallAudio.apply(ctx, on)
+    }
+
+    private fun beginAudioSession() {
+        val ctx = InterfonApp.appContext
+        CallAudio.setInCall(ctx, true)
+        CallAudio.apply(ctx, Bus.speaker.value)
+    }
+
+    private fun endAudioSession() {
+        runCatching { CallAudio.setInCall(InterfonApp.appContext, false) }
+    }
+
     private fun startMic() {
         if (micStarted) return
+        beginAudioSession()
         val ok = AudioEngine.startRecording { chunk ->
             // Half-duplex: enviar solo mientras el servidor escucha y no reproducimos
             if (Bus.callActive.value && Bus.callState.value == "listening" &&
@@ -106,6 +127,7 @@ object CallController {
     private fun stopMic() {
         AudioEngine.stopRecording()
         micStarted = false
+        endAudioSession()
     }
 
     // ---------- eventos del servidor ----------
@@ -151,7 +173,10 @@ object CallController {
                 }
             }
 
-            "walkie_done", "walkie_empty" -> Bus.walkieBusy.value = false
+            "walkie_done", "walkie_empty" -> {
+                Bus.walkieBusy.value = false
+                if (!walkieRecording) endAudioSession()
+            }
         }
     }
 
@@ -162,9 +187,10 @@ object CallController {
         pendingAudioKind = ""
         pendingAudioText = ""
         Bus.playing.value = true
+        val voice = kind != "message"
         scope.launch {
             try {
-                AudioEngine.playWav(data)
+                AudioEngine.playWav(data, voice)
             } finally {
                 Bus.playing.value = false
             }

@@ -27,6 +27,7 @@ class CallSession:
 class State:
     def __init__(self):
         self.sockets: set = set()
+        self.phone = None            # socket activo del telefono (politica: UNO solo)
         self.session: CallSession | None = None
         self.outbox: list = []      # mensajes pendientes hasta que el telefono conecte
         self.started = time.time()
@@ -36,6 +37,23 @@ class State:
     @property
     def phone_connected(self) -> bool:
         return bool(self.sockets)
+
+    async def replace_phone(self, ws) -> None:
+        """Registra el socket del telefono y cierra cualquier conexion previa
+        (evita duplicar mensajes durante las reconexiones del cliente)."""
+        old = self.phone
+        self.sockets.add(ws)
+        self.phone = ws
+        if old is not None and old is not ws:
+            self.sockets.discard(old)
+            try:
+                await old.close(code=4000, reason="nueva conexion del telefono")
+            except Exception:
+                pass
+
+    def _targets(self) -> list:
+        return [self.phone] if (self.phone and self.phone in self.sockets) \
+            else list(self.sockets)
 
     def new_session(self, mode: str = "call") -> CallSession:
         if self.session and self.session.state != "ended":
@@ -47,13 +65,27 @@ class State:
     async def broadcast(self, obj: dict) -> None:
         data = json.dumps(obj, ensure_ascii=False)
         dead = []
-        for ws in list(self.sockets):
+        for ws in self._targets():
             try:
                 await ws.send_text(data)
             except Exception:
                 dead.append(ws)
         for ws in dead:
             self.sockets.discard(ws)
+            if self.phone in dead:
+                self.phone = None
+
+    async def send_bytes(self, data: bytes) -> None:
+        dead = []
+        for ws in self._targets():
+            try:
+                await ws.send_bytes(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.sockets.discard(ws)
+            if self.phone in dead:
+                self.phone = None
 
     async def log_event(self, kind: str, **fields) -> None:
         rec = {"ts": datetime.now().isoformat(timespec="seconds"), "kind": kind, **fields}

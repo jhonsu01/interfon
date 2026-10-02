@@ -133,8 +133,7 @@ async def push_message(body: MessageBody):
     msg = {"type": "agent_message", "title": CFG.agent_name, "text": text}
     if state.phone_connected:
         await state.broadcast(msg)
-        for ws in list(state.sockets):
-            await ws.send_bytes(wav)
+        await state.send_bytes(wav)
         await state.broadcast({"type": "agent_audio_end"})
         delivered = True
     else:
@@ -150,8 +149,7 @@ async def push_message(body: MessageBody):
 
 async def _send_audio(kind: str, text: str, wav: bytes) -> None:
     await state.broadcast({"type": "agent_audio", "kind": kind, "text": text})
-    for ws in list(state.sockets):
-        await ws.send_bytes(wav)
+    await state.send_bytes(wav)
     await state.broadcast({"type": "agent_audio_end"})
 
 
@@ -245,8 +243,9 @@ async def _process_walkie(wav_bytes: bytes) -> None:
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
-    state.sockets.add(ws)
-    log.info("Telefono conectado (%d cliente/s).", len(state.sockets))
+    reemplazo = state.phone is not None and state.phone is not ws
+    await state.replace_phone(ws)
+    log.info("Telefono conectado%s.", " (reemplaza a una conexion previa)" if reemplazo else "")
     try:
         await ws.send_json({"type": "welcome", "server": "interfon",
                             "version": __version__, "agent": CFG.agent_name})
@@ -272,9 +271,12 @@ async def ws_endpoint(ws: WebSocket):
     except Exception as e:
         log.warning("WS error: %s", e)
     finally:
+        if state.phone is ws:
+            state.phone = None
         state.sockets.discard(ws)
-        log.info("Telefono desconectado.")
-        if state.session and state.session.state not in ("ended", "ringing"):
+        quedan = state.phone is not None or bool(state.sockets)
+        log.info("Telefono desconectado%s.", "" if quedan else " (sin conexiones)")
+        if not quedan and state.session and state.session.state not in ("ended", "ringing"):
             await _end_session("conexion perdida")
 
 

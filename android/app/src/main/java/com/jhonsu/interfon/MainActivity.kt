@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -52,11 +53,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -141,10 +147,12 @@ private fun HomeScreen(onCall: () -> Unit, onWalkie: () -> Unit, onSettings: () 
             .padding(24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            AgentAvatar(44.dp, 20.sp)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Interfon", fontSize = 26.sp, fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground)
-                Text("Telefono interno del agente", fontSize = 13.sp,
+                Text("Teléfono interno del agente", fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onSettings) {
@@ -227,6 +235,8 @@ private fun HomeScreen(onCall: () -> Unit, onWalkie: () -> Unit, onSettings: () 
 private fun CallScreen() {
     val state by Bus.callState.collectAsStateWithLifecycle()
     val playing by Bus.playing.collectAsStateWithLifecycle()
+    val speaker by Bus.speaker.collectAsStateWithLifecycle()
+    val agentName by Bus.agentName.collectAsStateWithLifecycle()
     val seconds by produceState(0) { while (true) { delay(1000); value++ } }
 
     Column(
@@ -237,13 +247,9 @@ private fun CallScreen() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(28.dp))
-        Box(Modifier.size(96.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
-            contentAlignment = Alignment.Center) {
-            Text("Z", fontSize = 38.sp, fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary)
-        }
+        AgentAvatar(96.dp)
         Spacer(Modifier.height(14.dp))
-        Text("ZCode", fontSize = 26.sp, fontWeight = FontWeight.Bold,
+        Text(agentName, fontSize = 26.sp, fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground)
         Text(
             when {
@@ -263,6 +269,14 @@ private fun CallScreen() {
         TranscriptList(filterCtx = "call")
 
         Spacer(Modifier.height(14.dp))
+        OutlinedButton(
+            onClick = { CallController.setSpeaker(!speaker) },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Text(if (speaker) "🎧  Auricular" else "🔊  Altavoz", fontSize = 15.sp)
+        }
+        Spacer(Modifier.height(10.dp))
         Button(
             onClick = { CallController.hangup() },
             modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -285,6 +299,7 @@ private fun CallScreen() {
 @Composable
 private fun WalkieScreen(onBack: () -> Unit) {
     val busy by Bus.walkieBusy.collectAsStateWithLifecycle()
+    val speaker by Bus.speaker.collectAsStateWithLifecycle()
     var pressed by remember { mutableStateOf(false) }
 
     Column(
@@ -352,6 +367,15 @@ private fun WalkieScreen(onBack: () -> Unit) {
         if (busy) CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
 
         Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = { CallController.setSpeaker(!speaker) },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Text(if (speaker) "🎧  Auricular" else "🔊  Altavoz", fontSize = 14.sp)
+        }
+
+        Spacer(Modifier.height(12.dp))
         TranscriptList(filterCtx = "walkie")
     }
 }
@@ -364,11 +388,23 @@ private fun WalkieScreen(onBack: () -> Unit) {
 private fun SettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val conn by Bus.connection.collectAsStateWithLifecycle()
+    val agentName by Bus.agentName.collectAsStateWithLifecycle()
+    val hasPhoto by Bus.agentPhoto.collectAsStateWithLifecycle()
     var url by remember { mutableStateOf(Bus.serverUrl.value) }
+    var nameField by remember { mutableStateOf(Bus.agentName.value) }
     val version = remember {
         runCatching {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
         }.getOrNull() ?: "?"
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            if (!Contact.save(ctx, uri)) {
+                Bus.events.tryEmit("No se pudo cargar la foto")
+            }
+        }
     }
 
     Column(
@@ -414,6 +450,41 @@ private fun SettingsScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth().height(54.dp),
         ) { Text("🔎 Buscar servidor en la red") }
 
+        Spacer(Modifier.height(28.dp))
+        Text("Contacto del agente", fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AgentAvatar(72.dp, 30.sp)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = nameField,
+                    onValueChange = {
+                        nameField = it
+                        Prefs.setAgentName(ctx, it)
+                        Bus.agentName.value = Prefs.agentName(ctx)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Nombre") },
+                )
+                Spacer(Modifier.height(6.dp))
+                Row {
+                    TextButton(onClick = { photoPicker.launch("image/*") }) {
+                        Text(if (hasPhoto != null) "📷 Cambiar foto" else "📷 Elegir foto")
+                    }
+                    if (hasPhoto != null) {
+                        TextButton(onClick = { Contact.clear(ctx) }) { Text("Quitar") }
+                    }
+                }
+            }
+        }
+        if (hasPhoto == null) {
+            Text("Ponle una foto y un nombre: se mostrarán como en un contacto real.",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
         Spacer(Modifier.height(24.dp))
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth()) {
@@ -441,6 +512,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun IncomingOverlay(call: Bus.IncomingCall, onAccept: () -> Unit, onDecline: () -> Unit) {
+    val agentName by Bus.agentName.collectAsStateWithLifecycle()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -449,13 +521,9 @@ private fun IncomingOverlay(call: Bus.IncomingCall, onAccept: () -> Unit, onDecl
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(Modifier.size(100.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
-            contentAlignment = Alignment.Center) {
-            Text(call.from.take(1).uppercase(), fontSize = 40.sp, fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary)
-        }
+        AgentAvatar(100.dp, 40.sp)
         Spacer(Modifier.height(18.dp))
-        Text("Llamada de ${call.from}", fontSize = 24.sp, fontWeight = FontWeight.Bold,
+        Text("Llamada de $agentName", fontSize = 24.sp, fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground)
         if (call.text.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
@@ -471,6 +539,35 @@ private fun IncomingOverlay(call: Bus.IncomingCall, onAccept: () -> Unit, onDecl
             Button(onClick = onAccept, modifier = Modifier.height(60.dp)) {
                 Text("Responder", fontWeight = FontWeight.Bold)
             }
+        }
+    }
+}
+
+// ============================================================
+// Avatar del contacto (foto o inicial)
+// ============================================================
+
+@Composable
+fun AgentAvatar(size: Dp, fontSize: TextUnit = 38.sp) {
+    val name by Bus.agentName.collectAsStateWithLifecycle()
+    val photo by Bus.agentPhoto.collectAsStateWithLifecycle()
+    Box(
+        Modifier
+            .size(size)
+            .background(MaterialTheme.colorScheme.primary, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        val bmp = photo
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = name,
+                modifier = Modifier.size(size).clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text(name.take(1).uppercase(), fontSize = fontSize, fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary)
         }
     }
 }

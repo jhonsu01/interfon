@@ -68,15 +68,20 @@ object AudioEngine {
         audioRecord = null
     }
 
-    /** Reproduce un WAV PCM en memoria y bloquea hasta terminar. */
-    fun playWav(wav: ByteArray) {
+    /**
+     * Reproduce un WAV PCM en memoria y bloquea hasta terminar.
+     * voice=true enruta por el canal de comunicacion (auricular/altavoz segun
+     * CallAudio); voice=false usa el canal de medios (audios push).
+     */
+    fun playWav(wav: ByteArray, voice: Boolean = false) {
         runCatching {
             val parsed = parseWav(wav)
             val pcm = parsed.pcm
             if (pcm.isEmpty()) return
             val track = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(if (voice) AudioAttributes.USAGE_VOICE_COMMUNICATION
+                              else AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build())
                 .setAudioFormat(AudioFormat.Builder()

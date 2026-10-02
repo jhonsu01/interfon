@@ -126,6 +126,7 @@ class IncomingCallActivity : ComponentActivity() {
 
 @Composable
 private fun IncomingScreen(from: String, text: String, onAccept: () -> Unit, onDecline: () -> Unit) {
+    val agentName = Bus.agentName.value
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -134,19 +135,11 @@ private fun IncomingScreen(from: String, text: String, onAccept: () -> Unit, onD
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(110.dp)
-                .background(MaterialTheme.colorScheme.primary, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text = from.take(1).uppercase(), fontSize = 44.sp, fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary)
-        }
+        AgentAvatar(110.dp, 44.sp)
         Spacer(Modifier.height(20.dp))
         Text("Llamada entrante", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         Spacer(Modifier.height(6.dp))
-        Text(from, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+        Text(agentName, fontSize = 30.sp, fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground)
         if (text.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
