@@ -38,6 +38,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from . import __version__
+from . import skills
 from .config import CFG
 from .providers import UnslothAPI, sapi_tts, tts_synthesize
 from .state import State
@@ -108,9 +109,21 @@ def _system_context() -> str:
         f"- Equipo: {socket.gethostname()} (Windows, servidor Interfon v{__version__})\n"
         f"- Uptime del servidor: {int(time.time() - state.started)}s\n"
         f"- Disco: {disco} · IP local: {ip}\n"
-        "Si te preguntan por la fecha, hora o estado del sistema, usa ESTE contexto. "
-        "Si algo no está aquí, dilo con honestidad en vez de adivinar."
+        "- Tus capacidades reales (ya resueltas por el sistema cuando el usuario las pide): "
+        "fecha, hora y estado del equipo; el CLIMA de cualquier ciudad; NOTICIAS de hoy o "
+        "de un tema; y BUSQUEDA en internet/Wikipedia. Si el usuario pregunta algo de eso, "
+        "el sistema ya le dio la respuesta real; solo comenta brevemente si aporta algo mas.\n"
+        "Si te preguntan 'que puedes hacer', describe ESA lista. "
+        "Si algo no está en tus capacidades, dilo con honestidad en vez de adivinar."
     )
+
+
+async def _grounded_answer(text: str) -> str | None:
+    """Respuesta con datos reales: determinista primero, luego habilidades web."""
+    fast = _fast_answer(text)
+    if fast:
+        return fast
+    return await run_in_threadpool(skills.try_skill, text)
 
 
 def _chat_messages(history: list) -> list:
@@ -182,7 +195,7 @@ async def push_message(body: MessageBody):
     if not text:
         raise HTTPException(400, detail="text vacio")
     if body.reply:
-        text = _fast_answer(text) or await run_in_threadpool(
+        text = (await _grounded_answer(text)) or await run_in_threadpool(
             api.chat, _chat_messages([{"role": "user", "content": text}]))
     wav = await run_in_threadpool(tts_synthesize, text)
     msg = {"type": "agent_message", "title": CFG.agent_name, "text": text}
@@ -225,8 +238,8 @@ async def _process_utterance(session, pcm: bytes) -> None:
         await state.log_event("stt", ctx="call", text=text)
         session.history.append({"role": "user", "content": text})
         session.trim()
-        fast = _fast_answer(text)
-        reply = fast or await run_in_threadpool(api.chat, _chat_messages(session.history))
+        grounded = await _grounded_answer(text)
+        reply = grounded or await run_in_threadpool(api.chat, _chat_messages(session.history))
         session.history.append({"role": "assistant", "content": reply})
         session.trim()
         await state.broadcast({"type": "transcript", "role": "agent", "text": reply, "ctx": "call"})
@@ -275,8 +288,8 @@ async def _process_walkie(wav_bytes: bytes) -> None:
         await state.log_event("stt", ctx="walkie", text=text)
         state.walkie_history.append({"role": "user", "content": text})
         state.walkie_history = state.walkie_history[-(CFG.history_turns * 2):]
-        fast = _fast_answer(text)
-        reply = fast or await run_in_threadpool(
+        grounded = await _grounded_answer(text)
+        reply = grounded or await run_in_threadpool(
             api.chat, _chat_messages(state.walkie_history))
         state.walkie_history.append({"role": "assistant", "content": reply})
         await state.broadcast({"type": "transcript", "role": "agent", "text": reply, "ctx": "walkie"})
