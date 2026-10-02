@@ -169,11 +169,17 @@ def _chat_messages(history: list) -> list:
 
 def _fast_answer(text: str) -> str | None:
     """Respuestas deterministas para datos que jamas deben fallar."""
-    t = text.lower()
+    t = text.lower().strip(" ¿?¡!.")
     now = datetime.now()
-    if re.search(r"\b(que|qué|q)\b.*\b(d[ií]a|fecha)\b|^hoy\b|\bfecha de hoy\b", t):
+    # Solo preguntas cortas y directas. Antes bastaba un "que" y un "dia" en
+    # cualquier parte ("¿cómo estuvo tu día? ... qué construiste") y cortaba la
+    # charla respondiendo la fecha.
+    if len(t) > 60:
+        return None
+    if re.search(r"\b(qu[eé]|a qu[eé]|en qu[eé]|cu[aá]l es la)\s+(d[ií]a|fecha)\b"
+                 r"|\bfecha de hoy\b|^hoy qu[eé] (d[ií]a|fecha)\b", t):
         return f"Hoy es {_fecha_hora(now).split(',')[0]}."
-    if re.search(r"\b(que|qué)\b.*\bhora\b|^hora\b|\bhora es\b", t):
+    if re.search(r"\bqu[eé] hora\b|\bhora es\b|^(la )?hora$", t):
         return f"Son las {now.hour:02d} horas con {now.minute:02d} minutos."
     return None
 
