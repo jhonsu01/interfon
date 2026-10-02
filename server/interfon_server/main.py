@@ -63,7 +63,41 @@ async def _startup_tasks() -> None:
             log.info("TTS SAPI verificado con la voz '%s'.", CFG.tts_voice_sapi)
         except Exception as e:
             log.warning("TTS SAPI no verificado: %s", e)
+
     await asyncio.get_event_loop().run_in_executor(None, warm)
+
+    # Puente Telegram: arranca en cuanto aparezca el token en .env
+    # (detecta en caliente: se puede agregar el token sin reiniciar).
+    asyncio.create_task(_telegram_watchdog())
+
+
+async def _telegram_watchdog() -> None:
+    import pathlib
+    env = pathlib.Path(__file__).resolve().parent.parent / ".env"
+
+    def read_token() -> str:
+        if not env.exists():
+            return ""
+        m = re.search(r"^TELEGRAM_BOT_TOKEN=(.+)$", env.read_text(encoding="utf-8-sig"), re.M)
+        return m.group(1).strip() if m else ""
+
+    started = False
+    while True:
+        token = read_token()
+        if token and not started:
+            started = True
+            log.info("TELEGRAM_BOT_TOKEN detectado: arrancando puente...")
+            import sys
+            sys.path.insert(0, str(env.parent))
+            from telegram_bridge import run_bridge
+            try:
+                await run_in_threadpool(run_bridge, token)
+            except Exception as e:
+                log.warning("Puente Telegram cayo (%s); reintentara en 10s.", e)
+                await asyncio.sleep(10)
+            started = False
+        else:
+            await asyncio.sleep(10)
 
 
 @asynccontextmanager
@@ -187,6 +221,26 @@ async def place_call(body: CallBody):
     asyncio.create_task(_ring_timeout(session.id))
     await state.log_event("call_placed", call_id=session.id, text=session.speak_first)
     return {"call_id": session.id, "ringing": True, "timeout_s": CFG.ring_timeout}
+
+
+class AskBody(BaseModel):
+    text: str
+
+
+@app.post("/api/ask")
+async def ask(body: AskBody):
+    """Pregunta textual (puente Telegram u otros clientes): mismas habilidades."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, detail="text vacio")
+    state.telegram_history.append({"role": "user", "content": text})
+    state.telegram_history = state.telegram_history[-(CFG.history_turns * 2):]
+    grounded = await _grounded_answer(text)
+    reply = grounded or await run_in_threadpool(api.chat, _chat_messages(state.telegram_history))
+    state.telegram_history.append({"role": "assistant", "content": reply})
+    state.telegram_history = state.telegram_history[-(CFG.history_turns * 2):]
+    await state.log_event("telegram", user=text, reply=reply)
+    return {"reply": reply, "grounded": grounded is not None}
 
 
 @app.post("/api/message")

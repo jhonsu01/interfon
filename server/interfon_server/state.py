@@ -32,6 +32,7 @@ class State:
         self.outbox: list = []      # mensajes pendientes hasta que el telefono conecte
         self.started = time.time()
         self.walkie_history: list = []
+        self.telegram_history: list = []
         self._log_lock = asyncio.Lock()
 
     @property
