@@ -1,0 +1,38 @@
+# Secretos y firmas (NUNCA al repo)
+.secrets/
+*.keystore
+*.jks
+server/.env
+
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Voces TTS (binarias grandes, se descargan de HuggingFace)
+server/voices/
+
+# Logs e intermedios
+server/logs/
+logs/
+.tmp/
+dist/
+
+# Gradle / Android
+.gradle/
+build/
+android/local.properties
+local.properties
+.cxx/
+
+# Memoria local del agente (notas personales)
+memory/
+
+# CodeGraph
+.codegraph/
+
+# OS
+Thumbs.db
+.DS_Store
+.tmp_*

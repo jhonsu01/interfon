@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Interfon</string>
+    <string name="channel_service">Conexion con el servidor</string>
+    <string name="channel_calls">Llamadas entrantes</string>
+    <string name="channel_messages">Audios del agente</string>
+    <string name="notif_service_title">Interfon activo</string>
+    <string name="notif_service_text">Esperando llamadas del agente…</string>
+</resources>
