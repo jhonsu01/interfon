@@ -15,8 +15,15 @@ object AudioEngine {
     @Volatile var recording = false
         private set
 
+    /** Permite cortar la reproduccion en curso (boton Detener del anuncio). */
+    @Volatile private var stopRequested = false
+
     private var audioRecord: AudioRecord? = null
     private var recordThread: Thread? = null
+
+    fun stopPlayback() {
+        stopRequested = true
+    }
 
     /** Inicia la captura y entrega chunks de ~100ms. False si no hay permiso. */
     @SuppressLint("MissingPermission")
@@ -111,6 +118,7 @@ object AudioEngine {
      */
     fun playWav(wav: ByteArray, voice: Boolean = false) {
         runCatching {
+            stopRequested = false
             val parsed = parseWav(wav)
             val pcm = parsed.pcm
             if (pcm.isEmpty()) return
@@ -135,13 +143,14 @@ object AudioEngine {
             val env = if (voice) pcmEnvelope(pcm, parsed.rate) else null
             val framesPerWin = maxOf(1, parsed.rate / 10)
             while (track.playbackHeadPosition < totalFrames &&
-                track.state == AudioTrack.STATE_INITIALIZED) {
+                track.state == AudioTrack.STATE_INITIALIZED && !stopRequested) {
                 if (env != null) {
                     val idx = (track.playbackHeadPosition / framesPerWin).toInt().coerceIn(0, env.size - 1)
                     Bus.voiceLevel.value = env[idx]
                 }
                 Thread.sleep(60)
             }
+            if (stopRequested) track.stop()
             Bus.voiceLevel.value = 0f
             track.release()
         }

@@ -32,6 +32,10 @@ object Bus {
     val voiceLevel = MutableStateFlow(0f)   // voz del agente (reproduccion)
     val micLevel = MutableStateFlow(0f)     // voz del usuario (grabacion)
 
+    /** Anuncio en curso (audio push): texto del mensaje mientras suena. */
+    val announce = MutableStateFlow<String?>(null)
+    val appInForeground = MutableStateFlow(false)
+
     /** Ruta de audio: false = auricular (llamada normal), true = altavoz. */
     val speaker = MutableStateFlow(false)
 

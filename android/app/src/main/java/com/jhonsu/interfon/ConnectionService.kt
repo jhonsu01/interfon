@@ -150,6 +150,36 @@ class ConnectionService : Service() {
                 else dismissCallNotification()
             }
         }
+        scope.launch {
+            Bus.announce.collectLatest { ann ->
+                if (ann == null) {
+                    getSystemService(NotificationManager::class.java)
+                        .cancel(InterfonApp.NOTIF_MESSAGE_ID)
+                }
+            }
+        }
+        CallController.setPushMessageHandler { _ ->
+            if (!Bus.appInForeground.value) showAnnounceNotification()
+        }
+    }
+
+    /** Audio push: efecto de llamada entrante (pantalla completa si esta bloqueado). */
+    private fun showAnnounceNotification() {
+        val fullScreen = PendingIntent.getActivity(
+            this, 3, AnnounceActivity.intent(this),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notif = NotificationCompat.Builder(this, InterfonApp.CH_MESSAGES)
+            .setSmallIcon(R.drawable.ic_notif)
+            .setContentTitle("Interfon")
+            .setContentText("Audio entrante del agente")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setFullScreenIntent(fullScreen, true)
+            .setContentIntent(fullScreen)
+            .setOngoing(true)
+            .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(InterfonApp.NOTIF_MESSAGE_ID, notif)
     }
 
     // ---------- notificaciones / foreground ----------

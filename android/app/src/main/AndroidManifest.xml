@@ -42,6 +42,16 @@
             android:turnScreenOn="true"
             android:theme="@style/Theme.Interfon" />
 
+        <activity
+            android:name=".AnnounceActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.Interfon" />
+
         <service
             android:name=".ConnectionService"
             android:exported="false"

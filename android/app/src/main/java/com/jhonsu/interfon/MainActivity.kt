@@ -82,6 +82,16 @@ class MainActivity : ComponentActivity() {
             InterfonTheme { AppRoot() }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        Bus.appInForeground.value = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Bus.appInForeground.value = false
+    }
 }
 
 private enum class Screen { HOME, WALKIE, SETTINGS }
@@ -112,6 +122,8 @@ private fun AppRoot() {
         Bus.events.collect { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }
     }
 
+    val announce by Bus.announce.collectAsStateWithLifecycle()
+
     when {
         incoming != null -> IncomingOverlay(
             call = incoming!!,
@@ -119,6 +131,8 @@ private fun AppRoot() {
             onDecline = { CallController.decline() })
 
         callActive -> CallScreen()
+
+        announce != null -> AnnounceScreen(onStop = { CallController.stopAnnouncement() })
 
         screen == Screen.WALKIE -> WalkieScreen(onBack = { screen = Screen.HOME })
 
@@ -577,6 +591,47 @@ private fun IncomingOverlay(call: Bus.IncomingCall, onAccept: () -> Unit, onDecl
                 Text("Responder", fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+// ============================================================
+// Pantalla de anuncio (audio push con efecto de llamada entrante)
+// ============================================================
+
+@Composable
+fun AnnounceScreen(onStop: () -> Unit) {
+    val text by Bus.announce.collectAsStateWithLifecycle()
+    val agentName by Bus.agentName.collectAsStateWithLifecycle()
+    val voiceLevel by Bus.voiceLevel.collectAsStateWithLifecycle()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            com.jhonsu.interfon.ui.VoiceOrb(
+                mode = com.jhonsu.interfon.ui.OrbMode.SPEAKING,
+                level = voiceLevel,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(200.dp))
+            AgentAvatar(104.dp)
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("Audio de $agentName", fontSize = 24.sp, fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground)
+        Spacer(Modifier.height(10.dp))
+        Text(text ?: "", fontSize = 15.sp, textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(30.dp))
+        OutlinedButton(
+            onClick = onStop,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) { Text("⏹  Detener", fontSize = 16.sp) }
     }
 }
 

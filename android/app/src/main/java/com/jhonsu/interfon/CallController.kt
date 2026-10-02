@@ -202,16 +202,41 @@ object CallController {
         val text = pendingAudioText
         pendingAudioKind = ""
         pendingAudioText = ""
+        val isAnnounce = kind == "message"
+        if (isAnnounce) Bus.announce.value = text
         Bus.playing.value = true
-        val voice = kind != "message"
         scope.launch {
             try {
-                // Cola: varios audios seguidos (p. ej. podcast) se reproducen en orden
-                playMutex.withLock { AudioEngine.playWav(data, voice) }
+                if (isAnnounce && !Bus.callActive.value) {
+                    // Anuncio estilo llamada: canal de comunicacion, altavoz, orbe visible
+                    val ctx = InterfonApp.appContext
+                    runCatching {
+                        CallAudio.setInCall(ctx, true)
+                        CallAudio.apply(ctx, true)
+                    }
+                    try {
+                        playMutex.withLock { AudioEngine.playWav(data, true) }
+                    } finally {
+                        runCatching {
+                            CallAudio.apply(ctx, Bus.speaker.value)
+                            CallAudio.setInCall(ctx, false)
+                        }
+                    }
+                } else {
+                    // Cola: varios audios seguidos (p. ej. podcast) se reproducen en orden
+                    playMutex.withLock { AudioEngine.playWav(data, !isAnnounce) }
+                }
             } finally {
                 Bus.playing.value = false
+                if (isAnnounce) Bus.announce.value = null
             }
         }
-        if (kind == "message") onPushMessage?.invoke(text)
+        if (isAnnounce) onPushMessage?.invoke(text)
+    }
+
+    /** Corta el anuncio en curso (boton Detener). */
+    fun stopAnnouncement() {
+        AudioEngine.stopPlayback()
+        Bus.announce.value = null
     }
 }
