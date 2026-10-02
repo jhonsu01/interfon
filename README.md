@@ -88,6 +88,84 @@ Al abrirla:
 
 Desde la app: **Llamar al agente** para conversar, **Walkie-Talkie** para intercambios cortos.
 
+## 🤖 Guía para agentes de IA (integración de sesión)
+
+Cualquier agente con acceso a este PC puede usar Interfon para **hablar con el usuario**:
+escuchar lo que dijo por voz, responder con audios, llamarlo o mandarle podcasts.
+Todo es HTTP contra `http://127.0.0.1:8765` (LAN, sin autenticación). En los
+ejemplos, `$S` = `server/.venv/Scripts/python.exe`.
+
+### Estado del sistema (verificar siempre primero)
+
+```bash
+$S server/status.py        # o: curl http://127.0.0.1:8765/api/status
+```
+
+Clave: `phone_connected` (¿la app está viva?), `llm.loaded`, `session.active`.
+
+### Agente → humano: enviar voz
+
+| Quiero | Llamada |
+| --- | --- |
+| Enviar un audio (efecto llamada entrante) | `POST /api/message` `{"text": "..."}` |
+| Llamar al teléfono (timbra sobre el bloqueo) | `POST /api/call` `{"text": "motivo"}` — se dice al contestar |
+| Audio con respuesta redactada por el LLM local | `POST /api/message` `{"text": "...", "reply": true}` |
+
+```bash
+$S server/send_audio.py "Terminé el build, todo verde"     # audio push
+$S server/call_user.py "¿Tenés un minuto?"                 # llamada
+```
+
+### Humano → agente: escuchar lo que dijo
+
+Todo lo hablado (llamada, walkie) queda transcrito en
+`server/logs/transcripts-AAAA-MM-DD.jsonl`:
+
+```json
+{"ts": "2026-10-01T20:45:01", "kind": "stt", "ctx": "walkie", "text": "¿Cuál es la nota..."}
+```
+
+`kind`: `stt` (voz del humano) · `agent` (respuesta hablada) · `message_pushed` ·
+`telegram` · eventos de llamada. Para retomar una conversación: `tail` del día y
+filtrar `kind=stt`. Luego responde con `send_audio.py` — ese es el ciclo completo
+de "conversar por el teléfono desde una sesión de agente".
+
+### Preguntar sin enviar audio
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/ask -H "Content-Type: application/json" \
+     -d '{"text": "clima en medellin"}'
+# → {"reply": "En Medellín hay 20 grados...", "grounded": true}
+```
+
+Mismas habilidades del teléfono: fecha/hora/estado del equipo, clima, noticias,
+búsqueda en internet/Wikipedia, festivos de Colombia (y LLM para el resto).
+
+### Podcast de papers (papercast)
+
+1. Elige un paper reciente y bien rankeado (arXiv/trending) y resúmelo en 4–8
+   **partes coloquiales** (~700 caracteres cada una, español con tildes,
+   analogías simples, números intactos — estilo "explícalo a un niño").
+2. Guarda las partes en un `.txt` separadas por líneas `---`.
+3. Reproduce:
+
+```bash
+$S server/papercast.py guion.txt   # cada parte entra como llamada, espaciada
+```
+
+### Telegram (opcional)
+
+`TELEGRAM_BOT_TOKEN` en `server/.env` (detección en caliente, sin reiniciar).
+El usuario autoriza su chat con `/start`; el bot responde con las mismas
+habilidades. Para escribirle desde el PC: `$S server/telegram_send.py "texto"`.
+
+### Reglas operativas
+
+- **Half-duplex**: no envíes audios durante una llamada activa (`session.active`).
+- Latencias: STT ~1,6 s · LLM local 2–10 s (primera carga ~90 s) · TTS ~1–4 s.
+- Audios largos: dividelos en partes de <900 caracteres (mejor ritmo de escucha).
+- El servidor es quien manda: si reiniciás el PC, `serve.py` debe volver a correr.
+
 ## Latencias medidas (Ryzen 5 3400G, iGPU)
 
 | Paso | Tiempo |
