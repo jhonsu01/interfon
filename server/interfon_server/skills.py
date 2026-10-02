@@ -158,8 +158,9 @@ def buscar(texto: str) -> str | None:
 _SKILLS = [
     (re.compile(r"\b(clima|tiempo|hace fr[ií]o|hace calor|llueve|lluvia|llover|"
                 r"temperatura|pron[oó]stico)\b"), clima),
-    (re.compile(r"\b(noticias?|titulares|actualidad|noticiero|sucedi[oó]|"
-                r"novedades)\b"), noticias),
+    (re.compile(r"\b(noticias?|notas?|titulares?|titular|actualidad|noticiero|"
+                r"novedades|[uú]ltima hora|que pas[oó]|que esta pasando|"
+                r"que sucedi[oó]|suced[ió] hoy)\b"), noticias),
     (re.compile(r"^(buscame|b[uú]scame|busca|buscar)\b|"
                 r"\b(qu[eé] es|qui[eé]n es|qui[eé]n fue|qu[eé] significa)\b"), buscar),
 ]

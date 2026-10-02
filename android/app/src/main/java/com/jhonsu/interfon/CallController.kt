@@ -3,6 +3,7 @@ package com.jhonsu.interfon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -86,6 +87,14 @@ object CallController {
         Bus.walkieBusy.value = true
         ws?.sendJson(JSONObject().put("type", "walkie_tx"))
         ws?.sendBytes(AudioEngine.pcmToWav(pcm))
+        // Seguro: nunca quedar "Procesando..." para siempre
+        scope.launch {
+            delay(60_000)
+            if (Bus.walkieBusy.value) {
+                Bus.walkieBusy.value = false
+                Bus.events.tryEmit("El servidor no respondio (60s)")
+            }
+        }
     }
 
     // ---------- microfono en llamada ----------

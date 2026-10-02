@@ -148,7 +148,9 @@ def _system_context() -> str:
         "de un tema; y BUSQUEDA en internet/Wikipedia. Si el usuario pregunta algo de eso, "
         "el sistema ya le dio la respuesta real; solo comenta brevemente si aporta algo mas.\n"
         "Si te preguntan 'que puedes hacer', describe ESA lista. "
-        "Si algo no está en tus capacidades, dilo con honestidad en vez de adivinar."
+        "Si algo no está en tus capacidades, dilo con honestidad en vez de adivinar. "
+        "NUNCA prometas buscar o consultar algo 'en un momento': o la respuesta real "
+        "ya te fue dada, o no la tienes."
     )
 
 
